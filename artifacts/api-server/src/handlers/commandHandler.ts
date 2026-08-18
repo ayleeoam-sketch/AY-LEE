@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { WASocket } from "../types/baileys-types";
 import { logger } from "../lib/logger";
@@ -66,9 +66,10 @@ function readCommand(module: Record<string, unknown>): Command | undefined {
 
 export async function loadCommands(): Promise<CommandRegistry> {
   const registry = new CommandRegistry();
-  // commandHandler is emitted under dist/handlers while commands are emitted
-  // under dist/commands by the per-file esbuild entry points.
-  const commandDirectory = path.join(__dirname, "..", "commands");
+  // commandHandler and commands share the same source/build parent:
+  // src/handlers -> src/commands and dist/handlers -> dist/commands.
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const commandDirectory = path.join(moduleDirectory, "..", "commands");
   const files = (await walk(commandDirectory)).sort();
 
   for (const file of files) {
