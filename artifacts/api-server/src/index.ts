@@ -47,17 +47,49 @@ if (!config.ownerNumber) {
 }
 
 void whatsapp.start().catch((error: unknown) => {
-  logger.error({ err: error }, "WhatsApp startup failed");
+  logger.error(
+    { errorType: error instanceof Error ? error.name : typeof error },
+    "WhatsApp startup failed",
+  );
 });
 
+let shutdownPromise: Promise<void> | undefined;
+
 async function shutdown(signal: string): Promise<void> {
-  logger.info({ signal }, "Shutdown requested");
-  await whatsapp.stop();
-  database.close();
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-  process.exit(0);
+  if (shutdownPromise) return shutdownPromise;
+
+  shutdownPromise = (async () => {
+    logger.info({ signal }, "Shutdown requested");
+    let shutdownFailed = false;
+
+    try {
+      await whatsapp.stop();
+    } catch (error: unknown) {
+      shutdownFailed = true;
+      logger.error(
+        { errorType: error instanceof Error ? error.name : typeof error },
+        "WhatsApp shutdown failed",
+      );
+    }
+
+    database.close();
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    } catch (error: unknown) {
+      shutdownFailed = true;
+      logger.error(
+        { errorType: error instanceof Error ? error.name : typeof error },
+        "HTTP server shutdown failed",
+      );
+    }
+
+    process.exitCode = shutdownFailed ? 1 : 0;
+  })();
+
+  return shutdownPromise;
 }
 
 process.once("SIGINT", () => void shutdown("SIGINT"));

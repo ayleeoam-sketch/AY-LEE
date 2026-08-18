@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: ay-lee-bot
+    runtime: node
+    autoDeploy: false
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    startCommand: pnpm --filter @workspace/api-server run start
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OWNER_NUMBER
+        sync: false
+      - key: DATA_DIR
+        value: data
+      - key: AUTH_DIR
+        value: data/auth
+      - key: DATABASE_PATH
+        value: data/ay-lee-bot.sqlite
+      - key: MAX_RECONNECT_ATTEMPTS
+        value: "8"

@@ -25,6 +25,7 @@ export function loadConfig(): BotConfig {
     process.env.MAX_RECONNECT_ATTEMPTS ?? "8",
     10,
   );
+  const dataDir = process.env.DATA_DIR?.trim() || "data";
 
   return {
     botName: process.env.BOT_NAME?.trim() || "AY-LEE BOT",
@@ -32,9 +33,12 @@ export function loadConfig(): BotConfig {
     ownerNumber,
     prefix: process.env.PREFIX?.trim() || ".",
     version: process.env.BOT_VERSION?.trim() || "1.0.0",
-    authDir: resolveDataPath(process.env.AUTH_DIR?.trim() || "data/auth"),
+    authDir: resolveDataPath(
+      process.env.AUTH_DIR?.trim() || path.join(dataDir, "auth"),
+    ),
     databasePath: resolveDataPath(
-      process.env.DATABASE_PATH?.trim() || "data/ay-lee-bot.sqlite",
+      process.env.DATABASE_PATH?.trim() ||
+        path.join(dataDir, "ay-lee-bot.sqlite"),
     ),
     maxReconnectAttempts:
       Number.isFinite(maxReconnectAttempts) && maxReconnectAttempts > 0

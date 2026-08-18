@@ -1,6 +1,5 @@
 import type { WASocket } from "../types/baileys-types";
 import pino from "pino";
-import qrcode from "qrcode-terminal";
 
 import type { BotConfig } from "../config";
 import { logger } from "../lib/logger";
@@ -46,7 +45,7 @@ export class WhatsAppConnection {
     } catch (error) {
       this.status = "stopped";
       logger.error(
-        { err: error },
+        { errorType: error instanceof Error ? error.name : typeof error },
         "WhatsApp connectivity is unavailable because the Baileys package could not be installed",
       );
       return;
@@ -79,9 +78,8 @@ export class WhatsAppConnection {
       if (qr) {
         this.status = "waiting_for_auth";
         logger.info(
-          "WhatsApp authentication required. Scan the QR code below with WhatsApp > Linked devices.",
+          "WhatsApp authentication required; QR credentials are intentionally not written to logs",
         );
-        qrcode.generate(qr, { small: true });
       }
 
       if (connection === "open") {
@@ -120,7 +118,10 @@ export class WhatsAppConnection {
       );
       this.reconnectTimer = setTimeout(() => {
         void this.connect().catch((error: unknown) => {
-          logger.error({ err: error }, "WhatsApp reconnect failed");
+          logger.error(
+            { errorType: error instanceof Error ? error.name : typeof error },
+            "WhatsApp reconnect failed",
+          );
         });
       }, delay);
     });

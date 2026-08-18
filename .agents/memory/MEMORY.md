@@ -1,1 +1,2 @@
 - [Baileys package availability](baileys-package-availability.md) — WhatsApp runtime dependency may be blocked by the workspace package firewall.
+- [Native dependency validation](native-dependency-validation.md) — SQLite runtime smoke tests need native install scripts; typecheck/build alone cannot verify better-sqlite3 startup.

@@ -51,7 +51,7 @@ export class DatabaseRepository {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.initialize();
-    logger.info({ databasePath }, "SQLite database ready");
+    logger.info("SQLite database ready");
   }
 
   private initialize(): void {
