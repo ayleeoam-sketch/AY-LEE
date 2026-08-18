@@ -3,6 +3,13 @@ export type GroupParticipant = {
   admin?: "admin" | "superadmin" | null;
 };
 
+export type MessageKey = {
+  remoteJid?: string;
+  fromMe?: boolean;
+  id?: string;
+  participant?: string;
+};
+
 export type WASocket = {
   ev: {
     on(
@@ -22,11 +29,24 @@ export type WASocket = {
     ): void;
     on(event: "creds.update", listener: (value: unknown) => void): void;
   };
-  sendMessage(jid: string, content: { text: string }): Promise<unknown>;
+  sendMessage(
+    jid: string,
+    content: {
+      text?: string;
+      mentions?: string[];
+      delete?: MessageKey;
+    },
+  ): Promise<unknown>;
   groupMetadata(jid: string): Promise<{
     subject: string;
     participants: GroupParticipant[];
   }>;
+  groupParticipantsUpdate(
+    jid: string,
+    participants: string[],
+    action: "add" | "remove" | "promote" | "demote",
+  ): Promise<unknown>;
+  groupInviteCode(jid: string): Promise<string>;
   user?: { id?: string };
   end(error?: unknown): void;
 };
@@ -34,10 +54,24 @@ export type WASocket = {
 export namespace proto {
   export type MessageContent = {
     conversation?: string;
-    extendedTextMessage?: { text?: string };
-    imageMessage?: { caption?: string };
-    videoMessage?: { caption?: string };
-    documentMessage?: { caption?: string };
+    extendedTextMessage?: {
+      text?: string;
+      contextInfo?: MessageContextInfo;
+    };
+    imageMessage?: { caption?: string; contextInfo?: MessageContextInfo };
+    videoMessage?: { caption?: string; contextInfo?: MessageContextInfo };
+    documentMessage?: { caption?: string; contextInfo?: MessageContextInfo };
+    stickerMessage?: { contextInfo?: MessageContextInfo };
+  };
+
+  export type MessageContextInfo = {
+    participant?: string;
+    stanzaId?: string;
+    remoteJid?: string;
+    fromMe?: boolean;
+    mentionedJid?: string[];
+    quotedMessage?: unknown;
+    groupMentions?: Array<{ groupJid?: string; groupSubject?: string }>;
   };
 
   export interface IWebMessageInfo {

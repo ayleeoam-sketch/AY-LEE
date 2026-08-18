@@ -1,4 +1,4 @@
-import type { CommandContext, MessageContext } from "../types/command";
+import type { MessageContext } from "../types/command";
 import { normalizePhoneNumber } from "../config";
 
 function jidPhoneNumber(jid: string): string {
@@ -14,7 +14,9 @@ export function isGroup(context: Pick<MessageContext, "isGroup">): boolean {
   return context.isGroup;
 }
 
-export async function isGroupAdmin(context: CommandContext): Promise<boolean> {
+export async function isGroupAdmin(
+  context: Pick<MessageContext, "sock" | "chatJid" | "senderJid" | "isGroup">,
+): Promise<boolean> {
   if (!context.isGroup) return false;
   try {
     const metadata = await context.sock.groupMetadata(context.chatJid);
@@ -27,7 +29,9 @@ export async function isGroupAdmin(context: CommandContext): Promise<boolean> {
   }
 }
 
-export async function isBotAdmin(context: CommandContext): Promise<boolean> {
+export async function isBotAdmin(
+  context: Pick<MessageContext, "sock" | "chatJid" | "isGroup">,
+): Promise<boolean> {
   if (!context.isGroup) return false;
   try {
     const metadata = await context.sock.groupMetadata(context.chatJid);

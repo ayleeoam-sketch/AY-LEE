@@ -39,7 +39,8 @@ export function formatCommandMenu(
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((command) => `│ ➜ ${prefix}${command.name}`)
         .join("\n");
-      return `┏━━━━━━━━━━━━━━━━━\n┃ 🧭 ${category.toUpperCase()}\n┗━━━━━━━━━━━━━━━━━\n${lines}`;
+      const icon = category.toLowerCase() === "group admin" ? "🛡️" : "🧭";
+      return `┏━━━━━━━━━━━━━━━━━\n┃ ${icon} ${category.toUpperCase()}\n┗━━━━━━━━━━━━━━━━━\n${lines}`;
     })
     .join("\n\n");
 

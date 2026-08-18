@@ -66,7 +66,9 @@ function readCommand(module: Record<string, unknown>): Command | undefined {
 
 export async function loadCommands(): Promise<CommandRegistry> {
   const registry = new CommandRegistry();
-  const commandDirectory = path.join(__dirname, "commands");
+  // commandHandler is emitted under dist/handlers while commands are emitted
+  // under dist/commands by the per-file esbuild entry points.
+  const commandDirectory = path.join(__dirname, "..", "commands");
   const files = (await walk(commandDirectory)).sort();
 
   for (const file of files) {

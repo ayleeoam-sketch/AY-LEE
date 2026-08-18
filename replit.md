@@ -1,6 +1,7 @@
 # AY-LEE BOT
 
-Phase 1 foundation for a modular WhatsApp bot with persistent SQLite data and general-purpose commands.
+Phase 2A foundation for a modular WhatsApp bot with persistent SQLite data,
+general-purpose commands, and group management infrastructure.
 
 ## Run & Operate
 
@@ -23,6 +24,8 @@ Phase 1 foundation for a modular WhatsApp bot with persistent SQLite data and ge
 
 - `artifacts/api-server/src/config.ts` — environment-backed bot configuration
 - `artifacts/api-server/src/commands/` — auto-discovered command modules
+  - `commands/general/` — Phase 1 general commands
+  - `commands/admin/` — Phase 2A group management commands
 - `artifacts/api-server/src/connection/` — WhatsApp lifecycle adapter
 - `artifacts/api-server/src/database/` — SQLite schema and persistence helpers
 - `artifacts/api-server/README.md` — setup, authentication, and troubleshooting
@@ -35,11 +38,15 @@ Phase 1 foundation for a modular WhatsApp bot with persistent SQLite data and ge
 
 ## Product
 
-AY-LEE BOT currently responds to six general commands: menu, help, ping, uptime, owner, and botinfo. Advanced media, AI, moderation, economy, and game features are reserved for later phases.
+AY-LEE BOT includes the Phase 1 general commands plus Phase 2A group
+management: moderation toggles, membership actions, warnings, message
+deletion, member mentions, invite links, and welcome/goodbye settings.
+Advanced media, AI, economy, and game features are reserved for later phases.
 
-## User preferences
+## Current scope
 
-Phase 1 only; do not add advanced commands until the foundation is verified.
+Phase 2A only; do not add AI, media, downloaders, economy, games, or other
+later-phase features until this foundation is verified.
 
 ## Gotchas
 

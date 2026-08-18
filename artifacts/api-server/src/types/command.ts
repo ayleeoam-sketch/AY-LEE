@@ -1,4 +1,4 @@
-import type { WASocket } from "./baileys-types";
+import type { MessageKey, WASocket } from "./baileys-types";
 import type { BotConfig } from "../config";
 import type { DatabaseRepository } from "../database/database";
 
@@ -12,6 +12,11 @@ export type MessageContext = {
   messageId?: string;
   pushName?: string;
   text: string;
+  quotedParticipant?: string;
+  quotedMessageKey?: MessageKey;
+  mentionedJids: string[];
+  isSticker: boolean;
+  hasGroupMention: boolean;
   config: BotConfig;
   database: DatabaseRepository;
   startedAt: number;

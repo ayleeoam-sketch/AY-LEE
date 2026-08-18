@@ -4,6 +4,7 @@ import { saveGroup } from "../database/groups";
 import { saveUser } from "../database/users";
 import type { DatabaseRepository } from "../database/database";
 import { handleCommand, type CommandRegistry } from "./commandHandler";
+import { handleGroupProtections } from "./groupProtections";
 import type { BotConfig } from "../config";
 
 function extractText(message: proto.IWebMessageInfo["message"]): string | undefined {
@@ -14,6 +15,18 @@ function extractText(message: proto.IWebMessageInfo["message"]): string | undefi
     message.imageMessage?.caption ??
     message.videoMessage?.caption ??
     message.documentMessage?.caption
+  );
+}
+
+function contextInfo(
+  message: proto.IWebMessageInfo["message"],
+): proto.MessageContextInfo | undefined {
+  return (
+    message?.extendedTextMessage?.contextInfo ??
+    message?.imageMessage?.contextInfo ??
+    message?.videoMessage?.contextInfo ??
+    message?.documentMessage?.contextInfo ??
+    message?.stickerMessage?.contextInfo
   );
 }
 
@@ -35,8 +48,10 @@ export function registerMessageHandler(
       const chatJid = message.key.remoteJid;
       if (!chatJid) continue;
 
-      const text = extractText(message.message);
-      if (!text) continue;
+      const text = extractText(message.message) ?? "";
+      const info = contextInfo(message.message);
+      const isSticker = Boolean(message.message?.stickerMessage);
+      if (!text && !isSticker) continue;
 
       const isGroup = chatJid.endsWith("@g.us");
       const senderJid = isGroup
@@ -59,23 +74,34 @@ export function registerMessageHandler(
         saveGroup(database, { jid: chatJid, name: groupName });
       }
 
+      const messageContext = {
+        sock,
+        chatJid,
+        senderJid,
+        isGroup,
+        messageId: message.key.id ?? undefined,
+        pushName: message.pushName ?? undefined,
+        text,
+        quotedParticipant: info?.participant,
+        quotedMessageKey: info?.stanzaId
+          ? {
+              remoteJid: info.remoteJid ?? chatJid,
+              id: info.stanzaId,
+              participant: info.participant,
+              fromMe: info.fromMe,
+            }
+          : undefined,
+        mentionedJids: info?.mentionedJid ?? [],
+        isSticker,
+        hasGroupMention: Boolean(info?.groupMentions?.length),
+        config,
+        database,
+        startedAt,
+      };
+
       try {
-        await handleCommand(
-          sock,
-          {
-            sock,
-            chatJid,
-            senderJid,
-            isGroup,
-            messageId: message.key.id ?? undefined,
-            pushName: message.pushName ?? undefined,
-            text,
-            config,
-            database,
-            startedAt,
-          },
-          registry,
-        );
+        await handleGroupProtections(messageContext);
+        if (text) await handleCommand(sock, messageContext, registry);
       } catch (error) {
         logger.error({ err: error, chat: chatJid }, "Message handling failed");
       }

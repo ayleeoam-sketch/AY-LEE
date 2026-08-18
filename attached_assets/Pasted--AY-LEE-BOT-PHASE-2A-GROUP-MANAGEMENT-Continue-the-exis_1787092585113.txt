@@ -1,0 +1,552 @@
+# AY-LEE BOT — PHASE 2A: GROUP MANAGEMENT
+
+Continue the existing AY-LEE BOT project.
+
+IMPORTANT:
+
+* Do NOT rebuild the project.
+* Do NOT replace the existing architecture.
+* Do NOT attempt to install Baileys again.
+* Do NOT bypass Replit's package firewall.
+* Do NOT install an unofficial WhatsApp library.
+* Do NOT modify the WhatsApp connection implementation except where necessary to keep interfaces compatible.
+* Keep all existing Phase 1 commands working.
+
+The WhatsApp transport is currently unavailable because Replit blocks the official Baileys package with HTTP 403.
+
+Therefore, build the GROUP MANAGEMENT command modules and database/settings infrastructure now, so they can use the WhatsApp connection once it becomes available.
+
+---
+
+## GROUP COMMANDS TO IMPLEMENT
+
+Implement:
+
+.antilink
+.antitag
+.antisticker
+.antigroupmention
+
+.kick
+.promote
+.demote
+
+.warn
+.warnings
+.resetwarn
+
+.delete
+
+.tagall
+.hidetag
+
+.grouplink
+
+.welcome
+.setwelcome
+
+.goodbye
+.setgoodbye
+
+---
+
+# 1. COMMAND ARCHITECTURE
+
+Every command must remain modular.
+
+Place group commands in:
+
+src/commands/admin/
+
+Do not put them all in one file.
+
+Use the existing command interface and command loader.
+
+Every command must contain proper metadata:
+
+* name
+* aliases
+* category
+* description
+* usage
+* permissions
+
+---
+
+# 2. GROUP VALIDATION
+
+Create/use a reusable helper:
+
+isGroup()
+
+If a group-only command is used in a private chat, return:
+
+❌ This command can only be used in a group.
+
+Do not crash.
+
+---
+
+# 3. ADMIN PERMISSIONS
+
+Create/use:
+
+isGroupAdmin()
+
+isBotAdmin()
+
+Commands that modify group membership or delete messages must require the sender to be a group administrator.
+
+If the sender isn't an admin:
+
+❌ Only group admins can use this command.
+
+If the bot needs admin privileges and isn't an admin:
+
+⚠️ I need to be a group admin to perform this action.
+
+Do not attempt unauthorized operations.
+
+---
+
+# 4. ANTILINK
+
+Implement:
+
+.antilink
+
+.antilink on
+.antilink off
+.antilink delete
+.antilink warn
+.antilink kick
+
+Store settings separately for every group.
+
+Default:
+
+OFF
+
+Modes:
+
+delete
+warn
+kick
+
+Detect common URLs including:
+
+http://
+https://
+[www](http://www).
+
+Also detect common social/invite links such as:
+
+WhatsApp
+Telegram
+Instagram
+TikTok
+Facebook
+YouTube
+Discord
+
+Use a proper URL detection utility.
+
+Do not detect ordinary text containing random punctuation as a link.
+
+Administrators should be exempt.
+
+The bot should only act when antilink is enabled.
+
+Create a reusable function:
+
+detectLinks(text)
+
+which returns whether the message contains a detectable link.
+
+Create a reusable configuration helper for group antilink settings.
+
+---
+
+# 5. ANTITAG
+
+Implement:
+
+.antitag on
+.antitag off
+
+Store the setting per group.
+
+When enabled, detect excessive mentions where supported.
+
+Administrators should be exempt.
+
+Prepare the action system so future versions can support delete/warn/kick.
+
+---
+
+# 6. ANTISTICKER
+
+Implement:
+
+.antisticker on
+.antisticker off
+
+Store the setting per group.
+
+When enabled, stickers from normal members should be removed when the bot has permission.
+
+Administrators are exempt.
+
+---
+
+# 7. ANTIGROUPMENTION
+
+Implement:
+
+.antigroupmention on
+.antigroupmention off
+
+Store setting per group.
+
+Use the available WhatsApp message metadata to detect group-wide mention behavior when supported.
+
+Do not fake detection.
+
+---
+
+# 8. KICK
+
+Implement:
+
+.kick @user
+
+Also support replying to the target user's message when possible.
+
+Requirements:
+
+* group only
+* sender must be admin
+* bot must be admin
+* identify target correctly
+* prevent the bot from kicking itself
+* return a friendly error if target cannot be identified
+
+---
+
+# 9. PROMOTE
+
+Implement:
+
+.promote @user
+
+Requirements:
+
+* group only
+* sender must be admin
+* bot must be admin
+* identify target correctly
+
+---
+
+# 10. DEMOTE
+
+Implement:
+
+.demote @user
+
+Requirements:
+
+* group only
+* sender must be admin
+* bot must be admin
+* identify target correctly
+
+---
+
+# 11. WARNING SYSTEM
+
+Implement:
+
+.warn @user
+
+.warnings @user
+
+.resetwarn @user
+
+Store warnings in SQLite.
+
+Each warning should contain:
+
+* group JID
+* user JID
+* warning count
+* updated timestamp
+
+Warnings must be isolated per group.
+
+Example:
+
+⚠️ @user has been warned.
+
+Warnings: 2/3
+
+Create a configurable warning threshold.
+
+Default:
+
+3 warnings
+
+At the threshold, prepare the system to support an automatic action.
+
+For now, use:
+
+3 warnings → kick
+
+but only actually perform the kick when the bot has permission.
+
+Do not crash if the bot lacks permission.
+
+---
+
+# 12. DELETE
+
+Implement:
+
+.delete
+
+This command must work by replying to a message.
+
+Requirements:
+
+* group only
+* sender must be admin
+* bot must have appropriate permission
+* identify the quoted message
+* delete the quoted message
+
+If no message was quoted:
+
+❌ Reply to a message with .delete
+
+---
+
+# 13. TAGALL
+
+Implement:
+
+.tagall
+
+Mention group members.
+
+Do not create an unnecessarily huge number of messages.
+
+Respect WhatsApp message-size limitations.
+
+Format example:
+
+╭━━『 TAG ALL 』━━╮
+
+📢 Attention everyone!
+
+@user1
+@user2
+@user3
+
+╰━━━━━━━━━━━━━━╯
+
+Use the actual WhatsApp mention mechanism when the transport becomes available.
+
+---
+
+# 14. HIDETAG
+
+Implement:
+
+.hidetag <message>
+
+Mention members while keeping the visible message concise where WhatsApp supports it.
+
+Example:
+
+.hidetag Meeting starts in 10 minutes.
+
+---
+
+# 15. GROUP LINK
+
+Implement:
+
+.grouplink
+
+Requirements:
+
+* group only
+* admin permission where required
+* bot must have permission to retrieve/generate the invite link
+
+Return a friendly error if unavailable.
+
+---
+
+# 16. WELCOME SYSTEM
+
+Implement:
+
+.welcome on
+.welcome off
+
+.setwelcome <message>
+
+Store settings per group.
+
+Default:
+
+OFF
+
+Support placeholders:
+
+{name}
+{group}
+{members}
+
+Example:
+
+👋 Welcome {name}!
+
+Welcome to {group} 🎉
+
+You are member #{members}.
+
+Please read the group rules.
+
+The actual join-event handler should be modular so it can be connected to the WhatsApp event system later.
+
+---
+
+# 17. GOODBYE SYSTEM
+
+Implement:
+
+.goodbye on
+.goodbye off
+
+.setgoodbye <message>
+
+Store settings per group.
+
+Support:
+
+{name}
+{group}
+
+Example:
+
+👋 Goodbye {name}!
+
+We wish you all the best.
+
+---
+
+# 18. DATABASE
+
+Extend the existing SQLite database.
+
+Create appropriate tables/settings for:
+
+group_settings
+warnings
+
+Do not duplicate database initialization logic.
+
+Use migrations or safe CREATE TABLE IF NOT EXISTS logic.
+
+Suggested group settings:
+
+group_jid
+antilink_enabled
+antilink_mode
+antitag_enabled
+antisticker_enabled
+antigroupmention_enabled
+welcome_enabled
+welcome_message
+goodbye_enabled
+goodbye_message
+warning_threshold
+created_at
+updated_at
+
+---
+
+# 19. MENU INTEGRATION
+
+Update the dynamic command registry so these commands automatically appear under:
+
+┏━━━━━━━━━━━━━━━━━
+┃ 🛡️ GROUP ADMIN
+┗━━━━━━━━━━━━━━━━━
+
+The menu command count must remain dynamic.
+
+Do not manually enter the command count.
+
+---
+
+# 20. HELP INTEGRATION
+
+Ensure:
+
+.help antilink
+
+.help kick
+
+.help welcome
+
+etc.
+
+automatically show the command metadata.
+
+---
+
+# 21. TESTING WITHOUT WHATSAPP
+
+Because Baileys is currently unavailable, do NOT pretend to perform live WhatsApp tests.
+
+Instead:
+
+* typecheck all command modules
+* build the project
+* test database initialization
+* test configuration functions
+* test link detection
+* test command metadata
+* test permission helper logic with unit-testable functions
+* ensure no imports require Baileys at build time in a way that prevents testing the command modules
+
+If a live WhatsApp operation cannot be tested, clearly mark it as requiring the WhatsApp transport.
+
+---
+
+# 22. FINAL CHECK
+
+Run:
+
+pnpm --filter @workspace/api-server run typecheck
+
+and the existing production build command.
+
+Fix all errors caused by the new code.
+
+Do NOT attempt to install Baileys again.
+
+At the end report:
+
+1. Commands added
+2. Database changes
+3. Typecheck result
+4. Build result
+5. Anything that still requires a live WhatsApp connection
+
+STOP after Phase 2A.
+
+Do not implement AI, media, downloaders, economy, games, or other features yet.
