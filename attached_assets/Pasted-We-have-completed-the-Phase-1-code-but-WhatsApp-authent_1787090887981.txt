@@ -1,0 +1,60 @@
+We have completed the Phase 1 code, but WhatsApp authentication is blocked because Baileys cannot currently be installed.
+
+Do NOT rebuild the project.
+
+Do NOT remove the existing WhatsApp connection implementation.
+
+Do NOT install an unrelated WhatsApp library.
+
+First inspect the current environment:
+
+1. Check the Node.js version.
+2. Check whether npm/pnpm/yarn/corepack are available.
+3. Check the workspace/package-manager configuration.
+4. Check the package registry configuration.
+5. Check whether the Replit package firewall is blocking the package itself or one of its dependencies.
+
+The previous attempt used:
+
+baileys@6.7.24
+
+and was rejected with HTTP 403.
+
+The current official Baileys project has moved to newer releases. Check the current official package metadata and use a compatible stable release rather than blindly forcing 6.7.24.
+
+Official package/repository:
+@whiskeysockets/baileys
+WhiskeySockets/Baileys
+
+Before changing package versions, inspect the project's current API and dependency requirements.
+
+If the current official package can be installed through the available Replit package manager, install the compatible version and update the existing connection code only as necessary for that version.
+
+If Replit's firewall blocks the package or one of its dependencies:
+
+* DO NOT repeatedly retry the same installation.
+* DO NOT use an unofficial random fork.
+* DO NOT bypass Replit security controls.
+* Do NOT fake or mock WhatsApp authentication.
+* Clearly report exactly which package/dependency is blocked and the HTTP error.
+
+If installation succeeds:
+
+1. Run the TypeScript typecheck.
+2. Run the build.
+3. Start the API server.
+4. Confirm that Baileys initializes.
+5. Confirm that the QR/pairing authentication process appears.
+6. Do not proceed to Phase 2.
+
+If the package still cannot be installed, stop and give me:
+
+* Node version
+* package manager
+* attempted Baileys version
+* exact package installation command
+* exact dependency that returned 403
+* whether the block comes from npm, GitHub, or Replit
+* the safest available solution
+
+Do not spend additional AI usage repeatedly attempting failed installations.
