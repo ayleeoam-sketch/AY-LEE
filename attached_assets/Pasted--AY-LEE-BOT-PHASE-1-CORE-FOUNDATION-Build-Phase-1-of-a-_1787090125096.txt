@@ -1,0 +1,638 @@
+# AY-LEE BOT — PHASE 1: CORE FOUNDATION
+
+Build Phase 1 of a WhatsApp bot called **AY-LEE BOT**.
+
+IMPORTANT: This is ONLY Phase 1.
+
+Do NOT build the media downloaders, AI, economy, games, antilink, welcome system, sticker commands, or other advanced features yet.
+
+The priority is to create a stable foundation that we can expand later.
+
+---
+
+## 1. TECHNOLOGY
+
+Use:
+
+* Node.js
+* TypeScript
+* Baileys for WhatsApp Web connectivity
+* SQLite for basic persistent data
+* dotenv/environment variables
+* A modular command architecture
+
+Use current stable versions of dependencies that are compatible with each other.
+
+Before installing packages, check compatibility and avoid deprecated packages where possible.
+
+---
+
+# 2. PROJECT NAME
+
+Bot name:
+
+**AY-LEE BOT**
+
+Default command prefix:
+
+**.**
+
+Owner display name:
+
+**AY-LEE**
+
+Version:
+
+**1.0.0**
+
+Do not hard-code sensitive information.
+
+Use Replit Secrets/environment variables for:
+
+* OWNER_NUMBER
+* SESSION/configuration secrets if required
+* future API keys
+
+---
+
+# 3. PROJECT STRUCTURE
+
+Create a clean structure similar to:
+
+src/
+├── index.ts
+├── config.ts
+│
+├── connection/
+│   └── whatsapp.ts
+│
+├── handlers/
+│   ├── messageHandler.ts
+│   └── commandHandler.ts
+│
+├── commands/
+│   ├── general/
+│   │   ├── menu.ts
+│   │   ├── help.ts
+│   │   ├── ping.ts
+│   │   ├── uptime.ts
+│   │   ├── owner.ts
+│   │   └── botinfo.ts
+│
+├── database/
+│   ├── database.ts
+│   ├── users.ts
+│   └── groups.ts
+│
+├── utils/
+│   ├── permissions.ts
+│   ├── logger.ts
+│   └── formatters.ts
+│
+└── types/
+└── command.ts
+
+Keep commands modular.
+
+Do NOT put all commands into index.ts.
+
+---
+
+# 4. WHATSAPP CONNECTION
+
+Create a reliable WhatsApp connection using Baileys.
+
+The bot must:
+
+* initialize the WhatsApp connection
+* display authentication/pairing information in the console as supported by the selected Baileys version
+* persist authentication credentials
+* reconnect after temporary connection failures
+* handle logged-out sessions correctly
+* handle connection errors
+* avoid infinite reconnect loops
+* prevent the bot from processing its own messages
+* gracefully shut down when the Replit process stops
+
+Do not print private authentication credentials into logs.
+
+---
+
+# 5. AUTHENTICATION
+
+Make authentication suitable for Replit.
+
+If QR authentication is the simplest reliable approach with the selected Baileys version, implement QR authentication.
+
+If pairing-code authentication is supported reliably by the selected version, make it optional.
+
+The console should clearly tell the owner what to do.
+
+Example:
+
+==============================
+AY-LEE BOT
+==========
+
+Waiting for WhatsApp authentication...
+
+[authentication instructions]
+
+Do not pretend authentication succeeded if it did not.
+
+---
+
+# 6. CONFIGURATION
+
+Create a central configuration system.
+
+Example configuration:
+
+BOT_NAME=AY-LEE BOT
+OWNER_NAME=AY-LEE
+OWNER_NUMBER=
+PREFIX=.
+BOT_VERSION=1.0.0
+
+Read values from environment variables.
+
+Provide sensible defaults for non-sensitive settings.
+
+The owner number must come from an environment variable.
+
+Normalize phone numbers before comparing them.
+
+---
+
+# 7. COMMAND SYSTEM
+
+Create a reusable command interface.
+
+Each command should contain:
+
+* name
+* aliases
+* category
+* description
+* usage
+* permissions
+* execute function
+
+Example concept:
+
+command.name = "ping"
+command.aliases = ["p"]
+command.category = "general"
+command.description = "Check bot response"
+command.usage = ".ping"
+
+Create an automatic command loader.
+
+The system should scan the commands directory and register commands automatically.
+
+Adding a new command later should NOT require rewriting the command handler.
+
+---
+
+# 8. COMMAND PARSER
+
+The bot uses:
+
+.
+
+as the default prefix.
+
+Example:
+
+.ping
+
+The parser should:
+
+1. Check whether the message begins with the configured prefix.
+2. Extract the command.
+3. Extract arguments.
+4. Convert the command name to lowercase.
+5. Find the registered command.
+6. Check permissions.
+7. Execute it.
+
+If the message is not a command, ignore it for now.
+
+Do not send "unknown command" responses for every ordinary message.
+
+---
+
+# 9. COMMANDS FOR PHASE 1
+
+Implement ONLY these six commands:
+
+.menu
+
+.help
+
+.ping
+
+.uptime
+
+.owner
+
+.botinfo
+
+---
+
+# 10. .PING
+
+Usage:
+
+.ping
+
+Return a simple response such as:
+
+🏓 Pong!
+
+Bot: AY-LEE BOT
+Status: Online
+
+If practical, calculate a basic response time.
+
+Do not make the calculation unnecessarily complicated.
+
+---
+
+# 11. .UPTIME
+
+Usage:
+
+.uptime
+
+Display how long the current bot process has been running.
+
+Example:
+
+⏱️ AY-LEE BOT Uptime
+
+2 hours, 14 minutes, 31 seconds
+
+---
+
+# 12. .OWNER
+
+Usage:
+
+.owner
+
+Display the configured owner information.
+
+Example:
+
+╭━━『 BOT OWNER 』━━╮
+
+👑 Owner: AY-LEE
+🤖 Bot: AY-LEE BOT
+
+╰━━━━━━━━━━━━━━━━━╯
+
+If an owner WhatsApp contact can be safely generated, support it.
+
+Do not expose configuration secrets.
+
+---
+
+# 13. .BOTINFO
+
+Usage:
+
+.botinfo
+
+Display:
+
+* Bot name
+* Version
+* Prefix
+* Command count
+* Runtime
+* Connection status
+
+Example:
+
+╭━━『 AY-LEE BOT 』━━╮
+
+🤖 Name: AY-LEE BOT
+⚡ Prefix: .
+📦 Commands: 6
+🌟 Version: 1.0.0
+⏱️ Uptime: ...
+🟢 Status: Online
+
+╰━━━━━━━━━━━━━━━━━╯
+
+The command count must be calculated dynamically from the command registry.
+
+Do NOT hard-code the number.
+
+---
+
+# 14. .MENU
+
+Create the first AY-LEE BOT menu.
+
+Use this style:
+
+╭━━『 *AY-LEE BOT* 』━━╮
+
+👋 Hello @user!
+
+⚡ Prefix: .
+📦 Total Commands: 6
+👑 Owner: AY-LEE
+🤖 Version: 1.0.0
+
+┏━━━━━━━━━━━━━━━━━
+┃ 🧭 GENERAL
+┗━━━━━━━━━━━━━━━━━
+│ ➜ .menu
+│ ➜ .help
+│ ➜ .ping
+│ ➜ .uptime
+│ ➜ .owner
+│ ➜ .botinfo
+
+╰━━━━━━━━━━━━━━━━━
+
+💡 Type .help <command> for more info.
+
+The menu must be generated from the command registry.
+
+Do not manually maintain the command list.
+
+When we add Phase 2 commands later, they should automatically appear in the correct category.
+
+---
+
+# 15. .HELP
+
+Support:
+
+.help
+
+and:
+
+.help ping
+
+Example:
+
+╭━━『 COMMAND HELP 』━━╮
+
+📌 Command: .ping
+
+📝 Description:
+Check whether the bot is online.
+
+📖 Usage:
+.ping
+
+📂 Category:
+General
+
+╰━━━━━━━━━━━━━━━━━╯
+
+The help information must come from command metadata.
+
+If the user requests an unknown command, return a friendly message.
+
+---
+
+# 16. DATABASE
+
+Create a basic SQLite database.
+
+Tables should include at least:
+
+users
+groups
+bot_settings
+
+For users store only basic information needed by the bot.
+
+For groups store:
+
+* group JID
+* group name if available
+* created/updated timestamps
+
+For bot settings store:
+
+* setting name
+* setting value
+
+Create clean helper functions so Phase 2 can add:
+
+* antilink settings
+* welcome settings
+* warnings
+* group preferences
+
+without redesigning the database.
+
+---
+
+# 17. PERMISSION FRAMEWORK
+
+Create reusable permission functions:
+
+isOwner()
+isGroup()
+isGroupAdmin()
+isBotAdmin()
+
+For Phase 1, only the owner check needs to be actively used.
+
+The other functions can be prepared for Phase 2.
+
+Do NOT implement fake permission checks.
+
+---
+
+# 18. MESSAGE HANDLER
+
+Create a central message handler.
+
+For every supported incoming message:
+
+* identify chat JID
+* identify sender JID
+* determine private/group
+* extract message text
+* determine command
+* execute command
+* catch errors
+
+Ignore unsupported message formats safely.
+
+Do not crash when:
+
+* a message is deleted
+* a message has no text
+* sender information is unavailable
+* a group metadata request fails
+
+---
+
+# 19. LOGGING
+
+Create a simple logger.
+
+Examples:
+
+[INFO] Starting AY-LEE BOT
+[INFO] Loading commands...
+[INFO] Loaded 6 commands
+[INFO] Connecting to WhatsApp...
+[INFO] WhatsApp connected
+[COMMAND] .ping | user | chat
+
+Do not log authentication secrets.
+
+Do not unnecessarily log private message contents.
+
+---
+
+# 20. ERROR HANDLING
+
+The bot must not crash because a command fails.
+
+Wrap command execution in proper error handling.
+
+If a command throws an error:
+
+* log the technical error
+* send a simple user-friendly error message
+* continue running the bot
+
+Do not expose stack traces to WhatsApp users.
+
+---
+
+# 21. SECURITY
+
+Never:
+
+* hard-code API keys
+* hard-code passwords
+* commit authentication credentials
+* execute arbitrary shell commands from WhatsApp messages
+* execute arbitrary JavaScript from user messages
+
+Use Replit Secrets/environment variables for sensitive configuration.
+
+---
+
+# 22. PACKAGE SCRIPTS
+
+Create useful scripts such as:
+
+npm run dev
+npm run build
+npm start
+
+The project must compile successfully with:
+
+npm run build
+
+Fix all TypeScript errors before declaring Phase 1 complete.
+
+---
+
+# 23. README
+
+Create a README containing:
+
+* AY-LEE BOT description
+* features currently implemented
+* project structure
+* Replit setup
+* required Secrets
+* how to authenticate WhatsApp
+* how to start the bot
+* how to add a command
+* troubleshooting
+* Phase 1 limitations
+
+Clearly state that advanced commands are not implemented yet.
+
+---
+
+# 24. TESTING
+
+After implementation:
+
+1. Install dependencies.
+2. Run the build.
+3. Fix compilation errors.
+4. Start the bot.
+5. Verify WhatsApp authentication.
+6. Verify the connection remains active.
+7. Test .ping.
+8. Test .uptime.
+9. Test .owner.
+10. Test .botinfo.
+11. Test .menu.
+12. Test .help.
+13. Test unknown command handling.
+14. Test that ordinary non-command messages are ignored.
+15. Test that the bot does not respond to itself.
+16. Test that restarting the process does not unnecessarily destroy authentication state.
+
+Do not say the bot is complete until these checks pass as far as the Replit environment allows.
+
+---
+
+# 25. IMPORTANT: DO NOT OVERBUILD
+
+This is Phase 1.
+
+DO NOT implement:
+
+* antilink
+* antitag
+* antisticker
+* kick
+* promote
+* demote
+* warn
+* tagall
+* welcome
+* goodbye
+* sticker conversion
+* TikTok downloader
+* YouTube downloader
+* Instagram downloader
+* AI
+* economy
+* games
+* broadcast
+* advanced owner commands
+
+Those will come in later phases.
+
+The goal is a stable foundation.
+
+---
+
+# 26. FINAL RESPONSE AFTER BUILDING
+
+After completing the implementation, tell me:
+
+1. What files you created.
+2. What dependencies you installed.
+3. Whether npm run build passes.
+4. Whether WhatsApp authentication is ready.
+5. Which Replit Secrets I need to configure.
+6. How I should start the bot.
+7. Any remaining issue that prevents full operation.
+
+Do not hide errors.
+
+If something cannot be completed because Replit's environment or a dependency prevents it, explain the exact problem and provide the safest fix.
+
+START WITH PHASE 1 ONLY.

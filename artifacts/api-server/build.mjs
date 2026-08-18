@@ -3,19 +3,35 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+const sourceDir = path.resolve(artifactDir, "src");
+
+async function getTypeScriptEntries(directory) {
+  const entries = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      entries.push(...(await getTypeScriptEntries(entryPath)));
+    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      entries.push(entryPath);
+    }
+  }
+  return entries;
+}
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    // Keep each command as an output entry so the runtime loader can discover
+    // new command files without changing the command handler.
+    entryPoints: await getTypeScriptEntries(sourceDir),
     platform: "node",
     bundle: true,
     format: "esm",
@@ -32,6 +48,7 @@ async function buildAll() {
       "sharp",
       "better-sqlite3",
       "sqlite3",
+      "baileys",
       "canvas",
       "bcrypt",
       "argon2",

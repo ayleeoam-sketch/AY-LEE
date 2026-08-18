@@ -1,44 +1,49 @@
-# [Project name]
+# AY-LEE BOT
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Phase 1 foundation for a modular WhatsApp bot with persistent SQLite data and general-purpose commands.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server and bot
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-server run build` — build the bot service
+- Required bot configuration: see `artifacts/api-server/.env.example`
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Bot: modular TypeScript command system with a Baileys runtime adapter
+- Local data: SQLite via better-sqlite3
+- Logging: Pino
+- Build: esbuild
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/config.ts` — environment-backed bot configuration
+- `artifacts/api-server/src/commands/` — auto-discovered command modules
+- `artifacts/api-server/src/connection/` — WhatsApp lifecycle adapter
+- `artifacts/api-server/src/database/` — SQLite schema and persistence helpers
+- `artifacts/api-server/README.md` — setup, authentication, and troubleshooting
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Commands are compiled as separate entry points so the runtime can discover new modules without a central registry edit.
+- WhatsApp startup is isolated behind a runtime adapter so dependency/install failure cannot crash the health server or pretend to be connected.
+- Reconnect attempts are bounded and exponentially delayed to prevent an outage from creating an infinite reconnect loop.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+AY-LEE BOT currently responds to six general commands: menu, help, ping, uptime, owner, and botinfo. Advanced media, AI, moderation, economy, and game features are reserved for later phases.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+Phase 1 only; do not add advanced commands until the foundation is verified.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Baileys is an external runtime dependency; if the package firewall blocks it, the service remains healthy but WhatsApp stays stopped and logs the exact cause.
 
 ## Pointers
 

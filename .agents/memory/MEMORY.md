@@ -1,0 +1,1 @@
+- [Baileys package availability](baileys-package-availability.md) — WhatsApp runtime dependency may be blocked by the workspace package firewall.

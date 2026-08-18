@@ -37,6 +37,16 @@ yarn-error.log
 testem.log
 /typings
 
+# AY-LEE BOT runtime state
+/data/auth/
+/data/*.sqlite
+/data/*.sqlite-shm
+/data/*.sqlite-wal
+/artifacts/api-server/data/auth/
+/artifacts/api-server/data/*.sqlite
+/artifacts/api-server/data/*.sqlite-shm
+/artifacts/api-server/data/*.sqlite-wal
+
 # System Files
 .DS_Store
 Thumbs.db
