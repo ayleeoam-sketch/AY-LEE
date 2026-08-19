@@ -1,5 +1,6 @@
 import type { WASocket } from "../types/baileys-types";
 import pino from "pino";
+import QRCode from "qrcode";
 
 import type { BotConfig } from "../config";
 import { logger } from "../lib/logger";
@@ -20,6 +21,7 @@ export class WhatsAppConnection {
   private reconnectTimer: NodeJS.Timeout | undefined;
   private stopping = false;
   private status: ConnectionStatus = "stopped";
+  private qrCodeDataUrl: string | undefined;
 
   constructor(
     private readonly config: BotConfig,
@@ -30,6 +32,10 @@ export class WhatsAppConnection {
 
   getStatus(): ConnectionStatus {
     return this.status;
+  }
+
+  getQrCode(): string | undefined {
+    return this.qrCodeDataUrl;
   }
 
   async start(): Promise<void> {
@@ -85,14 +91,23 @@ export class WhatsAppConnection {
         if (qr) {
           this.status = "waiting_for_auth";
 
-          logger.info(
-            "WhatsApp authentication required; QR credentials are intentionally not written to logs",
-          );
+          try {
+            this.qrCodeDataUrl = await QRCode.toDataURL(qr);
+            logger.info("WhatsApp QR code generated");
+          } catch (error) {
+            logger.error(
+              {
+                errorType: error instanceof Error ? error.name : typeof error,
+              },
+              "Failed to generate WhatsApp QR code",
+            );
+          }
         }
 
         if (connection === "open") {
           this.reconnectAttempts = 0;
           this.status = "online";
+          this.qrCodeDataUrl = undefined;
           logger.info("WhatsApp connected");
         }
 
@@ -106,6 +121,7 @@ export class WhatsAppConnection {
 
         if (statusCode === baileys.DisconnectReason.loggedOut) {
           this.status = "logged_out";
+          this.qrCodeDataUrl = undefined;
 
           logger.error(
             "WhatsApp session logged out. Remove the auth directory and restart to authenticate again.",
@@ -154,6 +170,7 @@ export class WhatsAppConnection {
   async stop(): Promise<void> {
     this.stopping = true;
     this.status = "stopped";
+    this.qrCodeDataUrl = undefined;
 
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 

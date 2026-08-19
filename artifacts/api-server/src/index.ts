@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import app from "./app";
+import { createApp } from "./app";
 import { WhatsAppConnection } from "./connection/whatsapp";
 import { loadConfig } from "./config";
 import { DatabaseRepository } from "./database/database";
@@ -25,7 +25,16 @@ const config = loadConfig();
 const database = new DatabaseRepository(config.databasePath);
 const registry = await loadCommands();
 const startedAt = Date.now();
-const whatsapp = new WhatsAppConnection(config, database, registry, startedAt);
+
+const whatsapp = new WhatsAppConnection(
+  config,
+  database,
+  registry,
+  startedAt,
+);
+
+const app = createApp(whatsapp);
+
 const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -36,7 +45,11 @@ const server = app.listen(port, (err) => {
 });
 
 logger.info(
-  { botName: config.botName, prefix: config.prefix, version: config.version },
+  {
+    botName: config.botName,
+    prefix: config.prefix,
+    version: config.version,
+  },
   "Starting AY-LEE BOT",
 );
 
@@ -48,7 +61,9 @@ if (!config.ownerNumber) {
 
 void whatsapp.start().catch((error: unknown) => {
   logger.error(
-    { errorType: error instanceof Error ? error.name : typeof error },
+    {
+      errorType: error instanceof Error ? error.name : typeof error,
+    },
     "WhatsApp startup failed",
   );
 });
@@ -67,7 +82,9 @@ async function shutdown(signal: string): Promise<void> {
     } catch (error: unknown) {
       shutdownFailed = true;
       logger.error(
-        { errorType: error instanceof Error ? error.name : typeof error },
+        {
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
         "WhatsApp shutdown failed",
       );
     }
@@ -81,7 +98,9 @@ async function shutdown(signal: string): Promise<void> {
     } catch (error: unknown) {
       shutdownFailed = true;
       logger.error(
-        { errorType: error instanceof Error ? error.name : typeof error },
+        {
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
         "HTTP server shutdown failed",
       );
     }
