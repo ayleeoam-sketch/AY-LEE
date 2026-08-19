@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const supabaseUrl = process.env.SUPABASE_URL;
-
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -15,10 +14,7 @@ const sessionId =
   process.env.SESSION_ID?.trim() ||
   "AY-LEE-BOT-01";
 
-if (
-  !supabaseUrl ||
-  !supabaseServiceRoleKey
-) {
+if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error(
     "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured.",
   );
@@ -29,16 +25,22 @@ const supabase = createClient(
   supabaseServiceRoleKey,
 );
 
-/*
- * Each WhatsApp bot gets its own folder.
- *
- * ay-lee-auth/
- *   AY-LEE-BOT-01/
- *     creds.json
- *     pre-key-1.json
- *     ...
- */
 const sessionFolder = sessionId;
+
+/*
+ * Prevent multiple auth uploads from running
+ * at the same time.
+ */
+let uploadRunning = false;
+let uploadQueued = false;
+
+/*
+ * Prevent excessive uploads.
+ *
+ * If Baileys fires many creds.update events quickly,
+ * we wait before doing another complete backup.
+ */
+let uploadTimer: NodeJS.Timeout | undefined;
 
 /* =========================================================
    LOCAL FILES
@@ -48,9 +50,23 @@ async function listLocalFiles(
   dir: string,
   base = dir,
 ): Promise<string[]> {
-  const entries = await fs.readdir(dir, {
-    withFileTypes: true,
-  });
+  let entries;
+
+  try {
+    entries = await fs.readdir(dir, {
+      withFileTypes: true,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
 
   const files: string[] = [];
 
@@ -99,11 +115,6 @@ async function listStorageFiles(
       });
 
   if (error) {
-    console.error(
-      "SUPABASE STORAGE LIST ERROR:",
-      error,
-    );
-
     throw new Error(
       `Failed to list auth files: ${error.message}`,
     );
@@ -119,9 +130,6 @@ async function listStorageFiles(
     const itemPath =
       `${folder}/${item.name}`;
 
-    /*
-     * Supabase folders normally have id === null.
-     */
     if (item.id === null) {
       files.push(
         ...(await listStorageFiles(
@@ -147,10 +155,21 @@ export async function downloadAuthState(
     recursive: true,
   });
 
-  const files =
-    await listStorageFiles(
-      sessionFolder,
+  let files: string[];
+
+  try {
+    files =
+      await listStorageFiles(
+        sessionFolder,
+      );
+  } catch (error) {
+    console.error(
+      "FAILED TO LIST SUPABASE AUTH FILES:",
+      error,
     );
+
+    return;
+  }
 
   console.log(
     `Found ${files.length} WhatsApp auth file(s) for session ${sessionId}.`,
@@ -158,11 +177,14 @@ export async function downloadAuthState(
 
   if (files.length === 0) {
     console.log(
-      `No existing WhatsApp session found for ${sessionId}. A new QR code will be generated.`,
+      `No existing WhatsApp session found for ${sessionId}.`,
     );
 
     return;
   }
+
+  let restored = 0;
+  let failed = 0;
 
   for (const storagePath of files) {
     const prefix =
@@ -182,9 +204,11 @@ export async function downloadAuthState(
           .download(storagePath);
 
       if (error) {
+        failed++;
+
         console.error(
           `SUPABASE DOWNLOAD ERROR for ${storagePath}:`,
-          error,
+          error.message,
         );
 
         continue;
@@ -209,156 +233,212 @@ export async function downloadAuthState(
           await data.arrayBuffer(),
         ),
       );
+
+      restored++;
     } catch (error) {
+      failed++;
+
       console.error(
-        `Failed to restore auth file ${storagePath}:`,
+        `FAILED TO RESTORE ${storagePath}:`,
         error,
       );
     }
   }
 
   console.log(
-    `WhatsApp auth state restored for session ${sessionId}.`,
+    `WhatsApp auth restore completed for ${sessionId}. Restored: ${restored}, failed: ${failed}.`,
   );
 }
 
 /* =========================================================
-   UPLOAD AUTH STATE
+   ACTUAL AUTH UPLOAD
    ========================================================= */
 
-/*
- * Uploading auth files can race with Baileys because
- * Baileys constantly creates/replaces/deletes key files.
- *
- * Therefore:
- *
- * - Missing files are skipped.
- * - Individual upload failures don't kill the bot.
- * - The whole auth upload does not throw.
- */
-
-export async function uploadAuthState(
+async function performUploadAuthState(
   authDir: string,
 ): Promise<void> {
-  console.log(
-    `Checking local WhatsApp auth directory: ${authDir}`,
-  );
+  if (uploadRunning) {
+    uploadQueued = true;
 
-  let files: string[];
+    console.log(
+      "WhatsApp auth upload already running. Another upload has been queued.",
+    );
+
+    return;
+  }
+
+  uploadRunning = true;
 
   try {
-    files =
-      await listLocalFiles(authDir);
-  } catch (error) {
-    console.error(
-      "FAILED TO LIST LOCAL AUTH FILES:",
-      error,
+    console.log(
+      `Backing up WhatsApp auth state for ${sessionId}...`,
     );
 
-    return;
-  }
-
-  console.log(
-    `Found ${files.length} local WhatsApp auth file(s).`,
-  );
-
-  if (files.length === 0) {
-    console.warn(
-      "No WhatsApp auth files found locally. Nothing to upload.",
-    );
-
-    return;
-  }
-
-  let uploaded = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (const relativePath of files) {
-    const localPath =
-      path.join(
-        authDir,
-        relativePath,
-      );
-
-    const storagePath =
-      `${sessionFolder}/${relativePath}`;
+    let files: string[];
 
     try {
-      /*
-       * IMPORTANT:
-       *
-       * Read the file immediately before upload.
-       * Baileys may have removed/replaced it after
-       * listLocalFiles() ran.
-       */
-      const contents =
-        await fs.readFile(localPath);
-
-      console.log(
-        `Uploading WhatsApp auth file: ${storagePath}`,
+      files =
+        await listLocalFiles(authDir);
+    } catch (error) {
+      console.error(
+        "FAILED TO LIST LOCAL AUTH FILES:",
+        error,
       );
 
-      const { error } =
-        await supabase.storage
-          .from(bucket)
-          .upload(
-            storagePath,
-            contents,
-            {
-              upsert: true,
-              contentType:
-                "application/json",
-            },
+      return;
+    }
+
+    if (files.length === 0) {
+      console.warn(
+        "No local WhatsApp auth files found.",
+      );
+
+      return;
+    }
+
+    let uploaded = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const relativePath of files) {
+      const localPath =
+        path.join(
+          authDir,
+          relativePath,
+        );
+
+      const storagePath =
+        `${sessionFolder}/${relativePath}`;
+
+      try {
+        /*
+         * Read immediately.
+         *
+         * Baileys can remove a pre-key at any time.
+         */
+        const contents =
+          await fs.readFile(localPath);
+
+        const { error } =
+          await supabase.storage
+            .from(bucket)
+            .upload(
+              storagePath,
+              contents,
+              {
+                upsert: true,
+                contentType:
+                  "application/json",
+              },
+            );
+
+        if (error) {
+          failed++;
+
+          console.error(
+            `SUPABASE UPLOAD ERROR for ${storagePath}:`,
+            error.message,
           );
 
-      if (error) {
+          continue;
+        }
+
+        uploaded++;
+      } catch (error) {
+        /*
+         * Baileys may delete the file between
+         * listing and reading it.
+         */
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          skipped++;
+
+          continue;
+        }
+
         failed++;
 
         console.error(
-          `SUPABASE UPLOAD ERROR for ${storagePath}:`,
+          `FAILED TO UPLOAD ${relativePath}:`,
           error,
         );
-
-        continue;
       }
+    }
 
-      uploaded++;
+    console.log(
+      `WhatsApp auth backup complete. Uploaded: ${uploaded}, skipped: ${skipped}, failed: ${failed}.`,
+    );
+  } finally {
+    uploadRunning = false;
 
-      console.log(
-        `Uploaded successfully: ${storagePath}`,
-      );
-    } catch (error) {
-      /*
-       * ENOENT is normal occasionally because
-       * Baileys can delete/replace a key file
-       * between listing and reading it.
-       */
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        skipped++;
+    /*
+     * If another creds.update happened while
+     * this upload was running, schedule one more.
+     */
+    if (uploadQueued) {
+      uploadQueued = false;
 
-        console.warn(
-          `Auth file disappeared before upload, skipping: ${relativePath}`,
-        );
-
-        continue;
-      }
-
-      failed++;
-
-      console.error(
-        `FAILED TO PROCESS AUTH FILE ${relativePath}:`,
-        error,
-      );
+      scheduleAuthUpload();
     }
   }
+}
 
-  console.log(
-    `WhatsApp auth upload completed for ${sessionId}. Uploaded: ${uploaded}, skipped: ${skipped}, failed: ${failed}.`,
+/* =========================================================
+   SCHEDULED AUTH UPLOAD
+   ========================================================= */
+
+/**
+ * Call this whenever Baileys fires creds.update.
+ *
+ * Multiple rapid events are combined into one upload.
+ */
+export function scheduleAuthUpload(
+  authDir?: string,
+): void {
+  const directory =
+    authDir ||
+    process.env.AUTH_DIR?.trim() ||
+    path.resolve(
+      process.env.DATA_DIR?.trim() ||
+        "data",
+      "auth",
+    );
+
+  if (uploadTimer) {
+    return;
+  }
+
+  uploadTimer = setTimeout(
+    () => {
+      uploadTimer = undefined;
+
+      void performUploadAuthState(
+        directory,
+      );
+    },
+    3000,
+  );
+}
+
+/**
+ * Immediate upload.
+ *
+ * Use this when the WhatsApp connection
+ * becomes fully online.
+ */
+export async function uploadAuthState(
+  authDir: string,
+): Promise<void> {
+  if (uploadTimer) {
+    clearTimeout(uploadTimer);
+    uploadTimer = undefined;
+  }
+
+  await performUploadAuthState(
+    authDir,
   );
 }
 
@@ -372,6 +452,16 @@ export async function clearAuthState(
   console.log(
     `Starting WhatsApp auth reset for session ${sessionId}...`,
   );
+
+  /*
+   * Cancel pending backup.
+   */
+  if (uploadTimer) {
+    clearTimeout(uploadTimer);
+    uploadTimer = undefined;
+  }
+
+  uploadQueued = false;
 
   /* -------------------------------------------------------
      1. Clear local Render auth
@@ -426,11 +516,6 @@ export async function clearAuthState(
           .remove(files);
 
       if (error) {
-        console.error(
-          "SUPABASE AUTH DELETE ERROR:",
-          error,
-        );
-
         throw error;
       }
 
