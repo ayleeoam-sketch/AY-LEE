@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "6.7.24",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "better-sqlite3": "^12.4.1",
