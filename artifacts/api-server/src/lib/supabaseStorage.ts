@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
 const bucket = process.env.SUPABASE_BUCKET || "ay-lee-auth";
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -17,7 +18,7 @@ const supabase = createClient(
   supabaseServiceRoleKey,
 );
 
-async function listFilesRecursive(
+async function listLocalFiles(
   dir: string,
   base = dir,
 ): Promise<string[]> {
@@ -32,7 +33,7 @@ async function listFilesRecursive(
 
     if (entry.isDirectory()) {
       files.push(
-        ...(await listFilesRecursive(fullPath, base)),
+        ...(await listLocalFiles(fullPath, base)),
       );
     } else {
       files.push(
@@ -46,17 +47,21 @@ async function listFilesRecursive(
   return files;
 }
 
-export async function downloadAuthState(
-  authDir: string,
-): Promise<void> {
-  await fs.mkdir(authDir, { recursive: true });
-
-  // List files inside the bucket root.
-  // Supabase Storage requires a valid path.
+/**
+ * Recursively list files in the Supabase Storage bucket.
+ */
+async function listStorageFiles(
+  folder = "",
+): Promise<string[]> {
   const { data, error } = await supabase.storage
     .from(bucket)
-    .list(undefined, {
+    .list(folder, {
       limit: 1000,
+      offset: 0,
+      sortBy: {
+        column: "name",
+        order: "asc",
+      },
     });
 
   if (error) {
@@ -70,28 +75,75 @@ export async function downloadAuthState(
     );
   }
 
-  for (const file of data ?? []) {
-    if (!file.name) continue;
+  const files: string[] = [];
 
-    const { data: fileData, error: downloadError } =
-      await supabase.storage
-        .from(bucket)
-        .download(file.name);
+  for (const item of data ?? []) {
+    if (!item.name) continue;
 
-    if (downloadError) {
+    const itemPath = folder
+      ? `${folder}/${item.name}`
+      : item.name;
+
+    // Supabase folders have a metadata property.
+    if (item.id === null) {
+      files.push(
+        ...(await listStorageFiles(itemPath)),
+      );
+    } else {
+      files.push(itemPath);
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Download the WhatsApp authentication files
+ * from Supabase Storage into the local auth directory.
+ */
+export async function downloadAuthState(
+  authDir: string,
+): Promise<void> {
+  await fs.mkdir(authDir, {
+    recursive: true,
+  });
+
+  let files: string[];
+
+  try {
+    files = await listStorageFiles();
+  } catch (error) {
+    console.error(
+      "SUPABASE AUTH DOWNLOAD ERROR:",
+      error,
+    );
+
+    throw error;
+  }
+
+  console.log(
+    `Found ${files.length} WhatsApp auth file(s) in Supabase.`,
+  );
+
+  for (const filePath of files) {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .download(filePath);
+
+    if (error) {
       console.error(
-        "SUPABASE STORAGE DOWNLOAD ERROR:",
-        downloadError,
+        `SUPABASE DOWNLOAD ERROR for ${filePath}:`,
+        error,
       );
 
       throw new Error(
-        `Failed to download ${file.name}: ${downloadError.message}`,
+        `Failed to download ${filePath}: ${error.message}`,
       );
     }
 
     const destination = path.join(
       authDir,
-      file.name,
+      filePath,
     );
 
     await fs.mkdir(
@@ -104,16 +156,24 @@ export async function downloadAuthState(
     await fs.writeFile(
       destination,
       Buffer.from(
-        await fileData.arrayBuffer(),
+        await data.arrayBuffer(),
       ),
     );
   }
 }
 
+/**
+ * Upload all WhatsApp authentication files
+ * from the local auth directory to Supabase Storage.
+ */
 export async function uploadAuthState(
   authDir: string,
 ): Promise<void> {
-  const files = await listFilesRecursive(authDir);
+  const files = await listLocalFiles(authDir);
+
+  console.log(
+    `Uploading ${files.length} WhatsApp auth file(s) to Supabase.`,
+  );
 
   for (const relativePath of files) {
     const localPath = path.join(
@@ -138,7 +198,7 @@ export async function uploadAuthState(
 
     if (error) {
       console.error(
-        "SUPABASE STORAGE UPLOAD ERROR:",
+        `SUPABASE UPLOAD ERROR for ${relativePath}:`,
         error,
       );
 
@@ -147,4 +207,8 @@ export async function uploadAuthState(
       );
     }
   }
+
+  console.log(
+    "WhatsApp auth state successfully uploaded to Supabase.",
+  );
 }
