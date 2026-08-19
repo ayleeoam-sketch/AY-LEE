@@ -32,7 +32,9 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Health check
+  // =========================
+  // HEALTH CHECK
+  // =========================
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -40,13 +42,16 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
     });
   });
 
-  // QR webpage
+  // =========================
+  // QR PAGE
+  // =========================
   app.get("/qr", (_req, res) => {
     res.type("html").send(`
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="UTF-8" />
+
           <meta
             name="viewport"
             content="width=device-width, initial-scale=1.0"
@@ -55,6 +60,10 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
           <title>AY-LEE BOT - WhatsApp QR</title>
 
           <style>
+            * {
+              box-sizing: border-box;
+            }
+
             body {
               margin: 0;
               min-height: 100vh;
@@ -64,6 +73,7 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
               background: #111827;
               color: white;
               font-family: Arial, sans-serif;
+              padding: 20px;
             }
 
             .container {
@@ -71,13 +81,13 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
               background: #1f2937;
               padding: 30px;
               border-radius: 20px;
-              max-width: 400px;
-              width: 90%;
-              box-sizing: border-box;
+              width: 100%;
+              max-width: 420px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             }
 
             h1 {
-              margin-bottom: 10px;
+              margin: 0 0 10px;
             }
 
             #status {
@@ -98,15 +108,24 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
             #message {
               margin-top: 15px;
               color: #9ca3af;
+              line-height: 1.5;
+            }
+
+            .loading {
+              padding: 40px 10px;
+              color: #9ca3af;
             }
           </style>
         </head>
 
         <body>
           <div class="container">
+
             <h1>AY-LEE BOT</h1>
 
-            <div id="status">Connecting...</div>
+            <div id="status">
+              Connecting...
+            </div>
 
             <img
               id="qr"
@@ -114,9 +133,10 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
               style="display: none;"
             />
 
-            <div id="message">
+            <div id="message" class="loading">
               Loading WhatsApp QR code...
             </div>
+
           </div>
 
           <script>
@@ -128,26 +148,39 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
 
                 const data = await response.json();
 
-                document.getElementById("status").textContent =
+                const status =
+                  document.getElementById("status");
+
+                const qr =
+                  document.getElementById("qr");
+
+                const message =
+                  document.getElementById("message");
+
+                status.textContent =
                   "Status: " + (data.status || "Unknown");
 
                 if (data.qr) {
-                  document.getElementById("qr").src = data.qr;
-                  document.getElementById("qr").style.display = "inline-block";
+                  qr.src = data.qr;
+                  qr.style.display = "inline-block";
 
-                  document.getElementById("message").textContent =
+                  message.textContent =
                     "Open WhatsApp → Linked devices → Link a device";
                 } else {
-                  document.getElementById("qr").style.display = "none";
+                  qr.style.display = "none";
 
-                  document.getElementById("message").textContent =
-                    data.message || "QR code is not available.";
+                  message.textContent =
+                    data.message ||
+                    "QR code is not currently available.";
                 }
+
               } catch (error) {
+
                 document.getElementById("status").textContent =
                   "Unable to connect to the bot";
 
-                document.getElementById("qr").style.display = "none";
+                document.getElementById("qr").style.display =
+                  "none";
 
                 document.getElementById("message").textContent =
                   "Please wait and try again.";
@@ -155,14 +188,18 @@ export function createApp(whatsapp: WhatsAppConnection): Express {
             }
 
             loadQR();
+
             setInterval(loadQR, 5000);
           </script>
+
         </body>
       </html>
     `);
   });
 
-  // API routes
+  // =========================
+  // API ROUTES
+  // =========================
   app.use("/api", createRouter(whatsapp));
 
   return app;
