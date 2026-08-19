@@ -7,34 +7,62 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
 
   router.use(healthRouter);
 
-  // API endpoint — returns the QR as JSON
-  const qrHandler = (_req: any, res: any) => {
-    const qr = whatsapp.getQrCode();
+  // WhatsApp QR API
+  router.get("/qr", (_req, res) => {
+    try {
+      const qr = whatsapp.getQrCode();
+      const status = whatsapp.getStatus();
 
-    if (!qr) {
-      return res.status(404).json({
-        status: whatsapp.getStatus(),
-        message: "WhatsApp QR code is not currently available.",
+      if (!qr) {
+        return res.json({
+          status,
+          qr: null,
+          message: "WhatsApp QR code is not currently available.",
+        });
+      }
+
+      return res.json({
+        status,
+        qr,
+      });
+    } catch (error) {
+      console.error("QR API error:", error);
+
+      return res.status(500).json({
+        status: "error",
+        qr: null,
+        message: "Unable to retrieve WhatsApp QR code.",
       });
     }
+  });
 
-    return res.json({
-      status: whatsapp.getStatus(),
-      qr,
-    });
-  };
+  // Status API
+  router.get("/status", (_req, res) => {
+    try {
+      return res.json({
+        status: whatsapp.getStatus(),
+      });
+    } catch (error) {
+      console.error("Status API error:", error);
 
-  // Support both endpoints
-  router.get("/qr", qrHandler);
-  router.get("/api/qr", qrHandler);
+      return res.status(500).json({
+        status: "error",
+      });
+    }
+  });
 
-  // QR webpage — displays the QR code
+  // QR webpage
   router.get("/qr-page", (_req, res) => {
     res.type("html").send(`
       <!DOCTYPE html>
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta charset="UTF-8" />
+          <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0"
+          />
+
           <title>AY-LEE BOT — WhatsApp QR</title>
 
           <style>
@@ -44,30 +72,41 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
               display: flex;
               align-items: center;
               justify-content: center;
-              background: #111;
+              background: #111827;
               color: white;
               font-family: Arial, sans-serif;
               text-align: center;
             }
 
             .container {
+              width: 90%;
+              max-width: 420px;
               padding: 30px;
-            }
-
-            img {
-              width: 320px;
-              max-width: 90vw;
-              background: white;
-              padding: 12px;
-              border-radius: 12px;
+              background: #1f2937;
+              border-radius: 20px;
+              box-sizing: border-box;
             }
 
             h1 {
               margin-bottom: 10px;
             }
 
-            p {
-              color: #bbb;
+            #qr {
+              width: 300px;
+              max-width: 80vw;
+              background: white;
+              padding: 10px;
+              border-radius: 12px;
+              display: none;
+            }
+
+            #status {
+              color: #9ca3af;
+              margin: 15px 0;
+            }
+
+            #message {
+              color: #9ca3af;
             }
           </style>
         </head>
@@ -76,37 +115,74 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
           <div class="container">
             <h1>AY-LEE BOT</h1>
 
-            <p>Scan this QR code with WhatsApp</p>
+            <div id="status">
+              Connecting...
+            </div>
 
-            <img id="qr" alt="WhatsApp QR Code">
+            <img
+              id="qr"
+              alt="WhatsApp QR Code"
+            />
 
-            <p id="status">Loading QR...</p>
+            <p id="message">
+              Loading QR code...
+            </p>
           </div>
 
           <script>
             async function loadQR() {
               try {
-                const response = await fetch("/api/qr");
+                const response = await fetch("/api/qr", {
+                  cache: "no-store"
+                });
+
+                if (!response.ok) {
+                  throw new Error(
+                    "HTTP " + response.status
+                  );
+                }
+
                 const data = await response.json();
 
-                if (data.qr) {
-                  document.getElementById("qr").src = data.qr;
+                document.getElementById("status").textContent =
+                  "Status: " + (data.status || "Unknown");
 
-                  document.getElementById("status").textContent =
+                const qrImage =
+                  document.getElementById("qr");
+
+                const message =
+                  document.getElementById("message");
+
+                if (data.qr) {
+                  qrImage.src = data.qr;
+                  qrImage.style.display = "inline-block";
+
+                  message.textContent =
                     "Open WhatsApp → Linked devices → Link a device";
                 } else {
-                  document.getElementById("status").textContent =
-                    data.message || "QR code is not available.";
+                  qrImage.style.display = "none";
+
+                  message.textContent =
+                    data.message ||
+                    "QR code is not available.";
                 }
+
               } catch (error) {
+                console.error(error);
+
                 document.getElementById("status").textContent =
-                  "Unable to load QR code.";
+                  "Unable to connect to the bot";
+
+                document.getElementById("qr").style.display =
+                  "none";
+
+                document.getElementById("message").textContent =
+                  "Please wait and try again.";
               }
             }
 
             loadQR();
 
-            // Refresh every 5 seconds
             setInterval(loadQR, 5000);
           </script>
         </body>
