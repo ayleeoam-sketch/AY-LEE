@@ -66,10 +66,10 @@ function readCommand(module: Record<string, unknown>): Command | undefined {
 
 export async function loadCommands(): Promise<CommandRegistry> {
   const registry = new CommandRegistry();
-  // commandHandler and commands share the same source/build parent:
-  // src/handlers -> src/commands and dist/handlers -> dist/commands.
+  // The production bundle runs this loader from dist/index.mjs, while
+  // compiled command modules are emitted under dist/commands.
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const commandDirectory = path.join(moduleDirectory, "..", "commands");
+  const commandDirectory = path.join(moduleDirectory, "commands");
   const files = (await walk(commandDirectory)).sort();
 
   for (const file of files) {
