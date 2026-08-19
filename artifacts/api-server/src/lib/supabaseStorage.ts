@@ -12,23 +12,33 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
   );
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+const supabase = createClient(
+  supabaseUrl,
+  supabaseServiceRoleKey,
+);
 
 async function listFilesRecursive(
   dir: string,
   base = dir,
 ): Promise<string[]> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const entries = await fs.readdir(dir, {
+    withFileTypes: true,
+  });
+
   const files: string[] = [];
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...(await listFilesRecursive(fullPath, base)));
+      files.push(
+        ...(await listFilesRecursive(fullPath, base)),
+      );
     } else {
       files.push(
-        path.relative(base, fullPath).replaceAll("\\", "/"),
+        path
+          .relative(base, fullPath)
+          .replaceAll("\\", "/"),
       );
     }
   }
@@ -36,15 +46,25 @@ async function listFilesRecursive(
   return files;
 }
 
-export async function downloadAuthState(authDir: string): Promise<void> {
+export async function downloadAuthState(
+  authDir: string,
+): Promise<void> {
   await fs.mkdir(authDir, { recursive: true });
 
+  // List files inside the bucket root.
+  // Supabase Storage requires a valid path.
   const { data, error } = await supabase.storage
     .from(bucket)
-    .list("", { limit: 1000 });
+    .list(undefined, {
+      limit: 1000,
+    });
 
   if (error) {
-    console.error("SUPABASE STORAGE ERROR:", error);
+    console.error(
+      "SUPABASE STORAGE LIST ERROR:",
+      error,
+    );
+
     throw new Error(
       `Failed to list auth files: ${error.message}`,
     );
@@ -60,7 +80,7 @@ export async function downloadAuthState(authDir: string): Promise<void> {
 
     if (downloadError) {
       console.error(
-        "SUPABASE DOWNLOAD ERROR:",
+        "SUPABASE STORAGE DOWNLOAD ERROR:",
         downloadError,
       );
 
@@ -69,15 +89,23 @@ export async function downloadAuthState(authDir: string): Promise<void> {
       );
     }
 
-    const destination = path.join(authDir, file.name);
+    const destination = path.join(
+      authDir,
+      file.name,
+    );
 
-    await fs.mkdir(path.dirname(destination), {
-      recursive: true,
-    });
+    await fs.mkdir(
+      path.dirname(destination),
+      {
+        recursive: true,
+      },
+    );
 
     await fs.writeFile(
       destination,
-      Buffer.from(await fileData.arrayBuffer()),
+      Buffer.from(
+        await fileData.arrayBuffer(),
+      ),
     );
   }
 }
@@ -88,19 +116,29 @@ export async function uploadAuthState(
   const files = await listFilesRecursive(authDir);
 
   for (const relativePath of files) {
-    const localPath = path.join(authDir, relativePath);
-    const contents = await fs.readFile(localPath);
+    const localPath = path.join(
+      authDir,
+      relativePath,
+    );
+
+    const contents = await fs.readFile(
+      localPath,
+    );
 
     const { error } = await supabase.storage
       .from(bucket)
-      .upload(relativePath, contents, {
-        upsert: true,
-        contentType: "application/json",
-      });
+      .upload(
+        relativePath,
+        contents,
+        {
+          upsert: true,
+          contentType: "application/json",
+        },
+      );
 
     if (error) {
       console.error(
-        "SUPABASE UPLOAD ERROR:",
+        "SUPABASE STORAGE UPLOAD ERROR:",
         error,
       );
 
