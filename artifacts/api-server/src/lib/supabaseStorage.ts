@@ -47,15 +47,12 @@ async function listLocalFiles(
   return files;
 }
 
-/**
- * Recursively list files in the Supabase Storage bucket.
- */
 async function listStorageFiles(
   folder = "",
 ): Promise<string[]> {
   const { data, error } = await supabase.storage
     .from(bucket)
-    .list(folder, {
+    .list(folder || undefined, {
       limit: 1000,
       offset: 0,
       sortBy: {
@@ -84,7 +81,6 @@ async function listStorageFiles(
       ? `${folder}/${item.name}`
       : item.name;
 
-    // Supabase folders have a metadata property.
     if (item.id === null) {
       files.push(
         ...(await listStorageFiles(itemPath)),
@@ -97,10 +93,6 @@ async function listStorageFiles(
   return files;
 }
 
-/**
- * Download the WhatsApp authentication files
- * from Supabase Storage into the local auth directory.
- */
 export async function downloadAuthState(
   authDir: string,
 ): Promise<void> {
@@ -108,18 +100,7 @@ export async function downloadAuthState(
     recursive: true,
   });
 
-  let files: string[];
-
-  try {
-    files = await listStorageFiles();
-  } catch (error) {
-    console.error(
-      "SUPABASE AUTH DOWNLOAD ERROR:",
-      error,
-    );
-
-    throw error;
-  }
+  const files = await listStorageFiles();
 
   console.log(
     `Found ${files.length} WhatsApp auth file(s) in Supabase.`,
@@ -162,23 +143,34 @@ export async function downloadAuthState(
   }
 }
 
-/**
- * Upload all WhatsApp authentication files
- * from the local auth directory to Supabase Storage.
- */
 export async function uploadAuthState(
   authDir: string,
 ): Promise<void> {
+  console.log(
+    `Checking local WhatsApp auth directory: ${authDir}`,
+  );
+
   const files = await listLocalFiles(authDir);
 
   console.log(
-    `Uploading ${files.length} WhatsApp auth file(s) to Supabase.`,
+    `Found ${files.length} local WhatsApp auth file(s).`,
   );
+
+  if (files.length === 0) {
+    console.warn(
+      "No WhatsApp auth files found locally. Nothing to upload.",
+    );
+    return;
+  }
 
   for (const relativePath of files) {
     const localPath = path.join(
       authDir,
       relativePath,
+    );
+
+    console.log(
+      `Uploading WhatsApp auth file: ${relativePath}`,
     );
 
     const contents = await fs.readFile(
@@ -206,6 +198,10 @@ export async function uploadAuthState(
         `Failed to upload ${relativePath}: ${error.message}`,
       );
     }
+
+    console.log(
+      `Uploaded successfully: ${relativePath}`,
+    );
   }
 
   console.log(
