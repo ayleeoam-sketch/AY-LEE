@@ -2,6 +2,11 @@ import type { WASocket } from "../types/baileys-types";
 import pino from "pino";
 import QRCode from "qrcode";
 
+import {
+  downloadAuthState,
+  uploadAuthState,
+} from "../lib/supabaseStorage";
+
 import type { BotConfig } from "../config";
 import { logger } from "../lib/logger";
 import type { DatabaseRepository } from "../database/database";
@@ -58,6 +63,18 @@ export class WhatsAppConnection {
       return;
     }
 
+    try {
+      await downloadAuthState(this.config.authDir);
+      logger.info("WhatsApp auth state loaded from Supabase");
+    } catch (error) {
+      logger.error(
+        {
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        "Failed to load WhatsApp auth state from Supabase",
+      );
+    }
+
     const { state, saveCreds } = await baileys.useMultiFileAuthState(
       this.config.authDir,
     );
@@ -83,7 +100,21 @@ export class WhatsAppConnection {
       this.startedAt,
     );
 
-    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("creds.update", async () => {
+      try {
+        await saveCreds();
+        await uploadAuthState(this.config.authDir);
+
+        logger.info("WhatsApp auth state uploaded to Supabase");
+      } catch (error) {
+        logger.error(
+          {
+            errorType: error instanceof Error ? error.name : typeof error,
+          },
+          "Failed to save WhatsApp auth state to Supabase",
+        );
+      }
+    });
 
     socket.ev.on(
       "connection.update",
@@ -108,6 +139,19 @@ export class WhatsAppConnection {
           this.reconnectAttempts = 0;
           this.status = "online";
           this.qrCodeDataUrl = undefined;
+
+          try {
+            await uploadAuthState(this.config.authDir);
+            logger.info("WhatsApp auth state saved to Supabase");
+          } catch (error) {
+            logger.error(
+              {
+                errorType: error instanceof Error ? error.name : typeof error,
+              },
+              "Failed to save WhatsApp auth state to Supabase",
+            );
+          }
+
           logger.info("WhatsApp connected");
         }
 
