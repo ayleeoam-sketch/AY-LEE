@@ -5,7 +5,9 @@ import path from "node:path";
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
-const bucket = process.env.SUPABASE_BUCKET || "ay-lee-auth";
+
+const bucket =
+  process.env.SUPABASE_BUCKET || "ay-lee-auth";
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error(
@@ -81,6 +83,7 @@ async function listStorageFiles(
       ? `${folder}/${item.name}`
       : item.name;
 
+    // Supabase Storage returns folders with id === null
     if (item.id === null) {
       files.push(
         ...(await listStorageFiles(itemPath)),
@@ -160,6 +163,7 @@ export async function uploadAuthState(
     console.warn(
       "No WhatsApp auth files found locally. Nothing to upload.",
     );
+
     return;
   }
 
@@ -206,5 +210,104 @@ export async function uploadAuthState(
 
   console.log(
     "WhatsApp auth state successfully uploaded to Supabase.",
+  );
+}
+
+/**
+ * Completely clears the WhatsApp authentication session
+ * from both Render's local filesystem and Supabase Storage.
+ *
+ * This is useful after WhatsApp has been unlinked/logged out
+ * and a fresh QR code is required.
+ */
+export async function clearAuthState(
+  authDir: string,
+): Promise<void> {
+  console.log(
+    "Starting complete WhatsApp auth state reset...",
+  );
+
+  // -------------------------------------------------------
+  // 1. Clear local Render auth files
+  // -------------------------------------------------------
+
+  try {
+    await fs.rm(authDir, {
+      recursive: true,
+      force: true,
+    });
+
+    await fs.mkdir(authDir, {
+      recursive: true,
+    });
+
+    console.log(
+      "Local WhatsApp auth state cleared.",
+    );
+  } catch (error) {
+    console.error(
+      "FAILED TO CLEAR LOCAL AUTH STATE:",
+      error,
+    );
+
+    throw new Error(
+      `Failed to clear local auth state: ${
+        error instanceof Error
+          ? error.message
+          : String(error)
+      }`,
+    );
+  }
+
+  // -------------------------------------------------------
+  // 2. Clear Supabase Storage auth files
+  // -------------------------------------------------------
+
+  try {
+    const files = await listStorageFiles();
+
+    console.log(
+      `Found ${files.length} WhatsApp auth file(s) in Supabase to delete.`,
+    );
+
+    if (files.length > 0) {
+      const { error } = await supabase.storage
+        .from(bucket)
+        .remove(files);
+
+      if (error) {
+        console.error(
+          "SUPABASE AUTH DELETE ERROR:",
+          error,
+        );
+
+        throw error;
+      }
+
+      console.log(
+        "Supabase WhatsApp auth files deleted successfully.",
+      );
+    } else {
+      console.log(
+        "Supabase auth bucket is already empty.",
+      );
+    }
+  } catch (error) {
+    console.error(
+      "FAILED TO CLEAR SUPABASE AUTH STATE:",
+      error,
+    );
+
+    throw new Error(
+      `Failed to clear Supabase auth state: ${
+        error instanceof Error
+          ? error.message
+          : String(error)
+      }`,
+    );
+  }
+
+  console.log(
+    "WhatsApp auth state completely cleared.",
   );
 }
