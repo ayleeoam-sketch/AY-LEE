@@ -8,7 +8,7 @@ const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const bucket =
-  process.env.SUPABASE_BUCKET ||
+  process.env.SUPABASE_BUCKET?.trim() ||
   "ay-lee-auth";
 
 const sessionId =
@@ -30,16 +30,19 @@ const supabase = createClient(
 );
 
 /*
- * Every bot session gets its own folder.
- *
- * Example:
+ * Each WhatsApp bot gets its own folder.
  *
  * ay-lee-auth/
  *   AY-LEE-BOT-01/
  *     creds.json
- *     pre-key-...
+ *     pre-key-1.json
+ *     ...
  */
 const sessionFolder = sessionId;
+
+/* =========================================================
+   LOCAL FILES
+   ========================================================= */
 
 async function listLocalFiles(
   dir: string,
@@ -75,6 +78,10 @@ async function listLocalFiles(
 
   return files;
 }
+
+/* =========================================================
+   SUPABASE FILE LIST
+   ========================================================= */
 
 async function listStorageFiles(
   folder: string,
@@ -113,7 +120,7 @@ async function listStorageFiles(
       `${folder}/${item.name}`;
 
     /*
-     * Supabase folders have id === null.
+     * Supabase folders normally have id === null.
      */
     if (item.id === null) {
       files.push(
@@ -129,9 +136,10 @@ async function listStorageFiles(
   return files;
 }
 
-/**
- * Download ONLY this bot's session.
- */
+/* =========================================================
+   DOWNLOAD AUTH STATE
+   ========================================================= */
+
 export async function downloadAuthState(
   authDir: string,
 ): Promise<void> {
@@ -148,54 +156,87 @@ export async function downloadAuthState(
     `Found ${files.length} WhatsApp auth file(s) for session ${sessionId}.`,
   );
 
+  if (files.length === 0) {
+    console.log(
+      `No existing WhatsApp session found for ${sessionId}. A new QR code will be generated.`,
+    );
+
+    return;
+  }
+
   for (const storagePath of files) {
+    const prefix =
+      `${sessionFolder}/`;
+
     const relativePath =
-      storagePath
-        .slice(
-          `${sessionFolder}/`.length,
+      storagePath.startsWith(prefix)
+        ? storagePath.slice(
+            prefix.length,
+          )
+        : storagePath;
+
+    try {
+      const { data, error } =
+        await supabase.storage
+          .from(bucket)
+          .download(storagePath);
+
+      if (error) {
+        console.error(
+          `SUPABASE DOWNLOAD ERROR for ${storagePath}:`,
+          error,
         );
 
-    const { data, error } =
-      await supabase.storage
-        .from(bucket)
-        .download(storagePath);
+        continue;
+      }
 
-    if (error) {
+      const destination =
+        path.join(
+          authDir,
+          relativePath,
+        );
+
+      await fs.mkdir(
+        path.dirname(destination),
+        {
+          recursive: true,
+        },
+      );
+
+      await fs.writeFile(
+        destination,
+        Buffer.from(
+          await data.arrayBuffer(),
+        ),
+      );
+    } catch (error) {
       console.error(
-        `SUPABASE DOWNLOAD ERROR for ${storagePath}:`,
+        `Failed to restore auth file ${storagePath}:`,
         error,
       );
-
-      throw new Error(
-        `Failed to download ${storagePath}: ${error.message}`,
-      );
     }
-
-    const destination =
-      path.join(
-        authDir,
-        relativePath,
-      );
-
-    await fs.mkdir(
-      path.dirname(destination),
-      {
-        recursive: true,
-      },
-    );
-
-    await fs.writeFile(
-      destination,
-      Buffer.from(
-        await data.arrayBuffer(),
-      ),
-    );
   }
+
+  console.log(
+    `WhatsApp auth state restored for session ${sessionId}.`,
+  );
 }
 
-/**
- * Upload ONLY this bot's session.
+/* =========================================================
+   UPLOAD AUTH STATE
+   ========================================================= */
+
+/*
+ * Uploading auth files can race with Baileys because
+ * Baileys constantly creates/replaces/deletes key files.
+ *
+ * Therefore:
+ *
+ * - Missing files are skipped.
+ * - Individual upload failures don't kill the bot.
+ * - The whole auth upload does not throw.
  */
+
 export async function uploadAuthState(
   authDir: string,
 ): Promise<void> {
@@ -203,8 +244,19 @@ export async function uploadAuthState(
     `Checking local WhatsApp auth directory: ${authDir}`,
   );
 
-  const files =
-    await listLocalFiles(authDir);
+  let files: string[];
+
+  try {
+    files =
+      await listLocalFiles(authDir);
+  } catch (error) {
+    console.error(
+      "FAILED TO LIST LOCAL AUTH FILES:",
+      error,
+    );
+
+    return;
+  }
 
   console.log(
     `Found ${files.length} local WhatsApp auth file(s).`,
@@ -218,6 +270,10 @@ export async function uploadAuthState(
     return;
   }
 
+  let uploaded = 0;
+  let skipped = 0;
+  let failed = 0;
+
   for (const relativePath of files) {
     const localPath =
       path.join(
@@ -228,46 +284,88 @@ export async function uploadAuthState(
     const storagePath =
       `${sessionFolder}/${relativePath}`;
 
-    console.log(
-      `Uploading WhatsApp auth file: ${storagePath}`,
-    );
+    try {
+      /*
+       * IMPORTANT:
+       *
+       * Read the file immediately before upload.
+       * Baileys may have removed/replaced it after
+       * listLocalFiles() ran.
+       */
+      const contents =
+        await fs.readFile(localPath);
 
-    const contents =
-      await fs.readFile(localPath);
-
-    const { error } =
-      await supabase.storage
-        .from(bucket)
-        .upload(
-          storagePath,
-          contents,
-          {
-            upsert: true,
-            contentType:
-              "application/json",
-          },
-        );
-
-    if (error) {
-      console.error(
-        `SUPABASE UPLOAD ERROR for ${storagePath}:`,
-        error,
+      console.log(
+        `Uploading WhatsApp auth file: ${storagePath}`,
       );
 
-      throw new Error(
-        `Failed to upload ${storagePath}: ${error.message}`,
+      const { error } =
+        await supabase.storage
+          .from(bucket)
+          .upload(
+            storagePath,
+            contents,
+            {
+              upsert: true,
+              contentType:
+                "application/json",
+            },
+          );
+
+      if (error) {
+        failed++;
+
+        console.error(
+          `SUPABASE UPLOAD ERROR for ${storagePath}:`,
+          error,
+        );
+
+        continue;
+      }
+
+      uploaded++;
+
+      console.log(
+        `Uploaded successfully: ${storagePath}`,
+      );
+    } catch (error) {
+      /*
+       * ENOENT is normal occasionally because
+       * Baileys can delete/replace a key file
+       * between listing and reading it.
+       */
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        skipped++;
+
+        console.warn(
+          `Auth file disappeared before upload, skipping: ${relativePath}`,
+        );
+
+        continue;
+      }
+
+      failed++;
+
+      console.error(
+        `FAILED TO PROCESS AUTH FILE ${relativePath}:`,
+        error,
       );
     }
   }
 
   console.log(
-    `WhatsApp auth state for ${sessionId} successfully uploaded to Supabase.`,
+    `WhatsApp auth upload completed for ${sessionId}. Uploaded: ${uploaded}, skipped: ${skipped}, failed: ${failed}.`,
   );
 }
 
-/**
- * Completely clears ONLY this bot's WhatsApp session.
- */
+/* =========================================================
+   CLEAR AUTH STATE
+   ========================================================= */
+
 export async function clearAuthState(
   authDir: string,
 ): Promise<void> {
@@ -275,9 +373,10 @@ export async function clearAuthState(
     `Starting WhatsApp auth reset for session ${sessionId}...`,
   );
 
-  /*
-   * 1. Clear local Render auth files.
-   */
+  /* -------------------------------------------------------
+     1. Clear local Render auth
+     ------------------------------------------------------- */
+
   try {
     await fs.rm(authDir, {
       recursive: true,
@@ -306,9 +405,10 @@ export async function clearAuthState(
     );
   }
 
-  /*
-   * 2. Clear ONLY this session from Supabase.
-   */
+  /* -------------------------------------------------------
+     2. Clear ONLY this session from Supabase
+     ------------------------------------------------------- */
+
   try {
     const files =
       await listStorageFiles(
