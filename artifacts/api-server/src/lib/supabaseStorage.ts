@@ -3,13 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const supabaseUrl = process.env.SUPABASE_URL;
+
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const bucket =
-  process.env.SUPABASE_BUCKET || "ay-lee-auth";
+  process.env.SUPABASE_BUCKET ||
+  "ay-lee-auth";
 
-if (!supabaseUrl || !supabaseServiceRoleKey) {
+const sessionId =
+  process.env.SESSION_ID?.trim() ||
+  "AY-LEE-BOT-01";
+
+if (
+  !supabaseUrl ||
+  !supabaseServiceRoleKey
+) {
   throw new Error(
     "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured.",
   );
@@ -19,6 +28,18 @@ const supabase = createClient(
   supabaseUrl,
   supabaseServiceRoleKey,
 );
+
+/*
+ * Every bot session gets its own folder.
+ *
+ * Example:
+ *
+ * ay-lee-auth/
+ *   AY-LEE-BOT-01/
+ *     creds.json
+ *     pre-key-...
+ */
+const sessionFolder = sessionId;
 
 async function listLocalFiles(
   dir: string,
@@ -31,11 +52,17 @@ async function listLocalFiles(
   const files: string[] = [];
 
   for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
+    const fullPath = path.join(
+      dir,
+      entry.name,
+    );
 
     if (entry.isDirectory()) {
       files.push(
-        ...(await listLocalFiles(fullPath, base)),
+        ...(await listLocalFiles(
+          fullPath,
+          base,
+        )),
       );
     } else {
       files.push(
@@ -50,18 +77,19 @@ async function listLocalFiles(
 }
 
 async function listStorageFiles(
-  folder = "",
+  folder: string,
 ): Promise<string[]> {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .list(folder || undefined, {
-      limit: 1000,
-      offset: 0,
-      sortBy: {
-        column: "name",
-        order: "asc",
-      },
-    });
+  const { data, error } =
+    await supabase.storage
+      .from(bucket)
+      .list(folder, {
+        limit: 1000,
+        offset: 0,
+        sortBy: {
+          column: "name",
+          order: "asc",
+        },
+      });
 
   if (error) {
     console.error(
@@ -77,16 +105,21 @@ async function listStorageFiles(
   const files: string[] = [];
 
   for (const item of data ?? []) {
-    if (!item.name) continue;
+    if (!item.name) {
+      continue;
+    }
 
-    const itemPath = folder
-      ? `${folder}/${item.name}`
-      : item.name;
+    const itemPath =
+      `${folder}/${item.name}`;
 
-    // Supabase Storage returns folders with id === null
+    /*
+     * Supabase folders have id === null.
+     */
     if (item.id === null) {
       files.push(
-        ...(await listStorageFiles(itemPath)),
+        ...(await listStorageFiles(
+          itemPath,
+        )),
       );
     } else {
       files.push(itemPath);
@@ -96,6 +129,9 @@ async function listStorageFiles(
   return files;
 }
 
+/**
+ * Download ONLY this bot's session.
+ */
 export async function downloadAuthState(
   authDir: string,
 ): Promise<void> {
@@ -103,32 +139,43 @@ export async function downloadAuthState(
     recursive: true,
   });
 
-  const files = await listStorageFiles();
+  const files =
+    await listStorageFiles(
+      sessionFolder,
+    );
 
   console.log(
-    `Found ${files.length} WhatsApp auth file(s) in Supabase.`,
+    `Found ${files.length} WhatsApp auth file(s) for session ${sessionId}.`,
   );
 
-  for (const filePath of files) {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .download(filePath);
+  for (const storagePath of files) {
+    const relativePath =
+      storagePath
+        .slice(
+          `${sessionFolder}/`.length,
+        );
+
+    const { data, error } =
+      await supabase.storage
+        .from(bucket)
+        .download(storagePath);
 
     if (error) {
       console.error(
-        `SUPABASE DOWNLOAD ERROR for ${filePath}:`,
+        `SUPABASE DOWNLOAD ERROR for ${storagePath}:`,
         error,
       );
 
       throw new Error(
-        `Failed to download ${filePath}: ${error.message}`,
+        `Failed to download ${storagePath}: ${error.message}`,
       );
     }
 
-    const destination = path.join(
-      authDir,
-      filePath,
-    );
+    const destination =
+      path.join(
+        authDir,
+        relativePath,
+      );
 
     await fs.mkdir(
       path.dirname(destination),
@@ -146,6 +193,9 @@ export async function downloadAuthState(
   }
 }
 
+/**
+ * Upload ONLY this bot's session.
+ */
 export async function uploadAuthState(
   authDir: string,
 ): Promise<void> {
@@ -153,7 +203,8 @@ export async function uploadAuthState(
     `Checking local WhatsApp auth directory: ${authDir}`,
   );
 
-  const files = await listLocalFiles(authDir);
+  const files =
+    await listLocalFiles(authDir);
 
   console.log(
     `Found ${files.length} local WhatsApp auth file(s).`,
@@ -168,69 +219,65 @@ export async function uploadAuthState(
   }
 
   for (const relativePath of files) {
-    const localPath = path.join(
-      authDir,
-      relativePath,
-    );
+    const localPath =
+      path.join(
+        authDir,
+        relativePath,
+      );
+
+    const storagePath =
+      `${sessionFolder}/${relativePath}`;
 
     console.log(
-      `Uploading WhatsApp auth file: ${relativePath}`,
+      `Uploading WhatsApp auth file: ${storagePath}`,
     );
 
-    const contents = await fs.readFile(
-      localPath,
-    );
+    const contents =
+      await fs.readFile(localPath);
 
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(
-        relativePath,
-        contents,
-        {
-          upsert: true,
-          contentType: "application/json",
-        },
-      );
+    const { error } =
+      await supabase.storage
+        .from(bucket)
+        .upload(
+          storagePath,
+          contents,
+          {
+            upsert: true,
+            contentType:
+              "application/json",
+          },
+        );
 
     if (error) {
       console.error(
-        `SUPABASE UPLOAD ERROR for ${relativePath}:`,
+        `SUPABASE UPLOAD ERROR for ${storagePath}:`,
         error,
       );
 
       throw new Error(
-        `Failed to upload ${relativePath}: ${error.message}`,
+        `Failed to upload ${storagePath}: ${error.message}`,
       );
     }
-
-    console.log(
-      `Uploaded successfully: ${relativePath}`,
-    );
   }
 
   console.log(
-    "WhatsApp auth state successfully uploaded to Supabase.",
+    `WhatsApp auth state for ${sessionId} successfully uploaded to Supabase.`,
   );
 }
 
 /**
- * Completely clears the WhatsApp authentication session
- * from both Render's local filesystem and Supabase Storage.
- *
- * This is useful after WhatsApp has been unlinked/logged out
- * and a fresh QR code is required.
+ * Completely clears ONLY this bot's WhatsApp session.
  */
 export async function clearAuthState(
   authDir: string,
 ): Promise<void> {
   console.log(
-    "Starting complete WhatsApp auth state reset...",
+    `Starting WhatsApp auth reset for session ${sessionId}...`,
   );
 
-  // -------------------------------------------------------
-  // 1. Clear local Render auth files
-  // -------------------------------------------------------
-
+  /*
+   * 1. Clear local Render auth files.
+   */
   try {
     await fs.rm(authDir, {
       recursive: true,
@@ -259,21 +306,24 @@ export async function clearAuthState(
     );
   }
 
-  // -------------------------------------------------------
-  // 2. Clear Supabase Storage auth files
-  // -------------------------------------------------------
-
+  /*
+   * 2. Clear ONLY this session from Supabase.
+   */
   try {
-    const files = await listStorageFiles();
+    const files =
+      await listStorageFiles(
+        sessionFolder,
+      );
 
     console.log(
-      `Found ${files.length} WhatsApp auth file(s) in Supabase to delete.`,
+      `Found ${files.length} auth file(s) for ${sessionId} to delete.`,
     );
 
     if (files.length > 0) {
-      const { error } = await supabase.storage
-        .from(bucket)
-        .remove(files);
+      const { error } =
+        await supabase.storage
+          .from(bucket)
+          .remove(files);
 
       if (error) {
         console.error(
@@ -285,11 +335,11 @@ export async function clearAuthState(
       }
 
       console.log(
-        "Supabase WhatsApp auth files deleted successfully.",
+        `Supabase session ${sessionId} deleted successfully.`,
       );
     } else {
       console.log(
-        "Supabase auth bucket is already empty.",
+        `No Supabase auth files found for ${sessionId}.`,
       );
     }
   } catch (error) {
@@ -308,6 +358,6 @@ export async function clearAuthState(
   }
 
   console.log(
-    "WhatsApp auth state completely cleared.",
+    `WhatsApp auth state for ${sessionId} completely cleared.`,
   );
 }
