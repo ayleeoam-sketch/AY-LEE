@@ -8,7 +8,7 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
   router.use(healthRouter);
 
   // API endpoint — returns the QR as JSON
-  router.get("/qr", (_req, res) => {
+  const qrHandler = (_req: any, res: any) => {
     const qr = whatsapp.getQrCode();
 
     if (!qr) {
@@ -22,7 +22,11 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
       status: whatsapp.getStatus(),
       qr,
     });
-  });
+  };
+
+  // Support both endpoints
+  router.get("/qr", qrHandler);
+  router.get("/api/qr", qrHandler);
 
   // QR webpage — displays the QR code
   router.get("/qr-page", (_req, res) => {
@@ -32,6 +36,7 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>AY-LEE BOT — WhatsApp QR</title>
+
           <style>
             body {
               margin: 0;
@@ -70,6 +75,7 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
         <body>
           <div class="container">
             <h1>AY-LEE BOT</h1>
+
             <p>Scan this QR code with WhatsApp</p>
 
             <img id="qr" alt="WhatsApp QR Code">
@@ -85,6 +91,7 @@ export function createRouter(whatsapp: WhatsAppConnection): IRouter {
 
                 if (data.qr) {
                   document.getElementById("qr").src = data.qr;
+
                   document.getElementById("status").textContent =
                     "Open WhatsApp → Linked devices → Link a device";
                 } else {
