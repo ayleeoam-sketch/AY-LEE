@@ -8,6 +8,7 @@ export type MessageContext = {
   sock: WASocket;
   chatJid: string;
   senderJid: string;
+  fromMe: boolean;
   isGroup: boolean;
   messageId?: string;
   pushName?: string;

@@ -37,11 +37,20 @@ export function registerMessageHandler(
   registry: CommandRegistry,
   startedAt: number,
 ): void {
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+  sock.ev.on("messages.upsert", async ({ messages, type }) => {    console.log(
+      "DEBUG messages.upsert:",
+      type,
+      messages.map((m) => ({
+        fromMe: m.key.fromMe,
+        remoteJid: m.key.remoteJid,
+        participant: m.key.participant,
+	text: extractText(m.message),
+      })),
+    );
     if (type !== "notify") return;
 
     for (const message of messages) {
-      if (message.key.fromMe || message.key.remoteJid === "status@broadcast") {
+      if (message.key.remoteJid === "status@broadcast") {
         continue;
       }
 
@@ -78,6 +87,7 @@ export function registerMessageHandler(
         sock,
         chatJid,
         senderJid,
+	fromMe: Boolean(message.key.fromMe),
         isGroup,
         messageId: message.key.id ?? undefined,
         pushName: message.pushName ?? undefined,

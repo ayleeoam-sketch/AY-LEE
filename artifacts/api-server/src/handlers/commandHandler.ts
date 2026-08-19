@@ -117,7 +117,7 @@ export async function handleCommand(
 ): Promise<boolean> {
   const text = message.text.trim();
   if (!text.startsWith(message.config.prefix)) return false;
-
+  if (!message.fromMe) return false;
   const body = text.slice(message.config.prefix.length).trim();
   if (!body) return false;
 
