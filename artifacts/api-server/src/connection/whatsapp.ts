@@ -23,11 +23,18 @@ export type ConnectionStatus =
 
 export class WhatsAppConnection {
   private socket: WASocket | undefined;
+
   private reconnectAttempts = 0;
   private reconnectTimer: NodeJS.Timeout | undefined;
+
   private stopping = false;
+  private connecting = false;
+
   private status: ConnectionStatus = "stopped";
   private qrCodeDataUrl: string | undefined;
+
+  private authUploadRunning = false;
+  private authUploadQueued = false;
 
   constructor(
     private readonly config: BotConfig,
@@ -46,9 +53,11 @@ export class WhatsAppConnection {
 
   async start(): Promise<void> {
     this.stopping = false;
+    this.reconnectAttempts = 0;
+
     this.status = "starting";
 
-    logger.info("Starting WhatsApp connection...");
+    logger.info("Starting AY-LEE BOT WhatsApp connection...");
 
     await this.connect();
   }
@@ -58,10 +67,53 @@ export class WhatsAppConnection {
       return;
     }
 
-    let baileys: typeof import("@whiskeysockets/baileys");
+    /*
+     * Prevent multiple connection attempts
+     * from creating multiple sockets.
+     */
+    if (this.connecting) {
+      logger.warn(
+        "WhatsApp connection attempt already running.",
+      );
+
+      return;
+    }
+
+    this.connecting = true;
 
     try {
-      baileys = await import("@whiskeysockets/baileys");
+      await this.createConnection();
+    } catch (error) {
+      logger.error(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
+        },
+        "WhatsApp connection creation failed",
+      );
+
+      this.scheduleReconnect();
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private async createConnection(): Promise<void> {
+    if (this.stopping) {
+      return;
+    }
+
+    let baileys: typeof import("@whiskeysockets/baileys");
+
+    /*
+     * Load Baileys.
+     */
+    try {
+      baileys = await import(
+        "@whiskeysockets/baileys"
+      );
     } catch (error) {
       this.status = "stopped";
 
@@ -78,11 +130,21 @@ export class WhatsAppConnection {
       return;
     }
 
+    /*
+     * Clear any previous QR.
+     */
+    this.qrCodeDataUrl = undefined;
+
+    /*
+     * Restore session from Supabase.
+     */
     try {
-      await downloadAuthState(this.config.authDir);
+      await downloadAuthState(
+        this.config.authDir,
+      );
 
       logger.info(
-        "WhatsApp auth state loaded from Supabase",
+        "WhatsApp auth state restored from Supabase",
       );
     } catch (error) {
       logger.error(
@@ -92,10 +154,13 @@ export class WhatsAppConnection {
               ? error.message
               : String(error),
         },
-        "Failed to load WhatsApp auth state from Supabase",
+        "Failed to restore WhatsApp auth state",
       );
     }
 
+    /*
+     * Create Baileys auth state.
+     */
     const {
       state,
       saveCreds,
@@ -103,18 +168,29 @@ export class WhatsAppConnection {
       this.config.authDir,
     );
 
+    /*
+     * Quiet Baileys logger.
+     */
     const baileysLogger = pino({
       level: "silent",
     });
 
+    /*
+     * Create WhatsApp socket.
+     */
     const socket = baileys.makeWASocket({
       auth: state,
+
       browser: baileys.Browsers.ubuntu(
         "AY-LEE BOT",
       ),
+
       logger: baileysLogger,
+
       markOnlineOnConnect: false,
+
       syncFullHistory: false,
+
       generateHighQualityLinkPreview: false,
     }) as WASocket;
 
@@ -125,9 +201,7 @@ export class WhatsAppConnection {
     );
 
     /*
-     * IMPORTANT:
-     * Register the message handler immediately after
-     * creating the socket.
+     * Register bot message handler.
      */
     try {
       registerMessageHandler(
@@ -154,93 +228,23 @@ export class WhatsAppConnection {
     }
 
     /*
-     * Save authentication credentials whenever
-     * Baileys updates them.
+     * Save credentials.
+     *
+     * We queue uploads so multiple
+     * creds.update events don't create
+     * hundreds of simultaneous uploads.
      */
     socket.ev.on(
       "creds.update",
       async () => {
-        try {
-          await saveCreds();
-
-          await uploadAuthState(
-            this.config.authDir,
-          );
-
-          logger.info(
-            "WhatsApp auth state uploaded to Supabase",
-          );
-        } catch (error) {
-          logger.error(
-            {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : String(error),
-            },
-            "Failed to save WhatsApp auth state",
-          );
-        }
+        await this.queueAuthUpload(
+          saveCreds,
+        );
       },
     );
 
     /*
-     * TEMPORARY DEBUG LISTENER
-     *
-     * This lets us confirm that WhatsApp messages
-     * are actually reaching the server.
-     */
-    socket.ev.on(
-      "messages.upsert",
-      (event) => {
-        try {
-          logger.info(
-            {
-              type: event.type,
-              messageCount: event.messages?.length ?? 0,
-            },
-            "WhatsApp message event received",
-          );
-
-          for (const message of event.messages ?? []) {
-            const remoteJid =
-              message.key.remoteJid;
-
-            const fromMe =
-              message.key.fromMe;
-
-            const messageText =
-              message.message?.conversation ??
-              message.message?.extendedTextMessage?.text ??
-              message.message?.imageMessage?.caption ??
-              message.message?.videoMessage?.caption ??
-              "";
-
-            logger.info(
-              {
-                remoteJid,
-                fromMe,
-                text: messageText,
-              },
-              "Incoming WhatsApp message",
-            );
-          }
-        } catch (error) {
-          logger.error(
-            {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : String(error),
-            },
-            "Error processing WhatsApp debug message event",
-          );
-        }
-      },
-    );
-
-    /*
-     * Connection state
+     * WhatsApp connection events.
      */
     socket.ev.on(
       "connection.update",
@@ -258,7 +262,9 @@ export class WhatsAppConnection {
         );
 
         /*
-         * NEW QR CODE
+         * -----------------------------------------
+         * NEW QR
+         * -----------------------------------------
          */
         if (qr) {
           this.status = "waiting_for_auth";
@@ -284,40 +290,35 @@ export class WhatsAppConnection {
         }
 
         /*
-         * WHATSAPP CONNECTED
+         * -----------------------------------------
+         * CONNECTED
+         * -----------------------------------------
          */
         if (connection === "open") {
-          this.reconnectAttempts = 0;
           this.status = "online";
+
+          this.reconnectAttempts = 0;
+
           this.qrCodeDataUrl = undefined;
 
           logger.info(
-            "WhatsApp connected successfully",
+            "AY-LEE BOT is now ONLINE on WhatsApp",
           );
 
-          try {
-            await uploadAuthState(
-              this.config.authDir,
-            );
+          /*
+           * Save current session immediately.
+           */
+          await this.queueAuthUpload(
+            saveCreds,
+          );
 
-            logger.info(
-              "WhatsApp auth state saved to Supabase",
-            );
-          } catch (error) {
-            logger.error(
-              {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : String(error),
-              },
-              "Failed to save WhatsApp auth state to Supabase",
-            );
-          }
+          return;
         }
 
         /*
-         * CONNECTION CLOSED
+         * -----------------------------------------
+         * NOT CLOSED
+         * -----------------------------------------
          */
         if (
           connection !== "close" ||
@@ -326,6 +327,11 @@ export class WhatsAppConnection {
           return;
         }
 
+        /*
+         * -----------------------------------------
+         * CONNECTION CLOSED
+         * -----------------------------------------
+         */
         const statusCode =
           (
             lastDisconnect?.error as
@@ -345,17 +351,27 @@ export class WhatsAppConnection {
         );
 
         /*
+         * Socket is dead.
+         */
+        if (this.socket === socket) {
+          this.socket = undefined;
+        }
+
+        /*
+         * -----------------------------------------
          * LOGGED OUT
+         * -----------------------------------------
          */
         if (
           statusCode ===
           baileys.DisconnectReason.loggedOut
         ) {
           this.status = "logged_out";
+
           this.qrCodeDataUrl = undefined;
 
-          logger.error(
-            "WhatsApp session logged out. Clearing auth state.",
+          logger.warn(
+            "WhatsApp was logged out. Clearing old session.",
           );
 
           try {
@@ -364,7 +380,12 @@ export class WhatsAppConnection {
             );
 
             this.reconnectAttempts = 0;
+
             this.status = "starting";
+
+            logger.info(
+              "Old WhatsApp session cleared. Generating new QR...",
+            );
 
             await this.connect();
           } catch (error) {
@@ -377,7 +398,7 @@ export class WhatsAppConnection {
                     ? error.message
                     : String(error),
               },
-              "Failed to reset WhatsApp auth state",
+              "Failed to reset WhatsApp session",
             );
           }
 
@@ -385,78 +406,150 @@ export class WhatsAppConnection {
         }
 
         /*
+         * -----------------------------------------
          * NORMAL RECONNECT
+         * -----------------------------------------
          */
-        if (
-          this.reconnectAttempts >=
-          this.config.maxReconnectAttempts
-        ) {
-          this.status = "stopped";
+        this.scheduleReconnect();
+      },
+    );
+  }
 
-          logger.error(
-            {
-              attempts:
-                this.reconnectAttempts,
-            },
-            "WhatsApp reconnect limit reached",
+  /*
+   * Queue auth uploads.
+   *
+   * This prevents Baileys from causing
+   * many simultaneous Supabase uploads.
+   */
+  private async queueAuthUpload(
+    saveCreds: () => Promise<void>,
+  ): Promise<void> {
+    this.authUploadQueued = true;
+
+    if (this.authUploadRunning) {
+      return;
+    }
+
+    this.authUploadRunning = true;
+
+    try {
+      while (this.authUploadQueued) {
+        this.authUploadQueued = false;
+
+        try {
+          await saveCreds();
+
+          await uploadAuthState(
+            this.config.authDir,
           );
 
+          logger.info(
+            "WhatsApp auth state saved to Supabase",
+          );
+        } catch (error) {
+          logger.error(
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : String(error),
+            },
+            "Failed to save WhatsApp auth state",
+          );
+        }
+      }
+    } finally {
+      this.authUploadRunning = false;
+    }
+  }
+
+  /*
+   * Schedule reconnect.
+   */
+  private scheduleReconnect(): void {
+    if (this.stopping) {
+      return;
+    }
+
+    if (this.reconnectTimer) {
+      return;
+    }
+
+    /*
+     * We don't want the bot to permanently stop
+     * just because Render temporarily woke/restarted
+     * or WhatsApp disconnected.
+     *
+     * Therefore use a long retry cycle.
+     */
+    this.reconnectAttempts += 1;
+
+    /*
+     * Maximum 30 seconds between attempts.
+     */
+    const delay = Math.min(
+      30_000,
+      2_000 *
+        2 **
+          Math.min(
+            this.reconnectAttempts - 1,
+            4,
+          ),
+    );
+
+    this.status = "starting";
+
+    logger.warn(
+      {
+        attempt: this.reconnectAttempts,
+        delay,
+      },
+      "Scheduling WhatsApp reconnect",
+    );
+
+    this.reconnectTimer =
+      setTimeout(() => {
+        this.reconnectTimer =
+          undefined;
+
+        if (this.stopping) {
           return;
         }
 
-        this.reconnectAttempts += 1;
-
-        const delay = Math.min(
-          30_000,
-          1_000 *
-            2 **
-              (this.reconnectAttempts - 1),
-        );
-
-        logger.warn(
-          {
-            attempt:
-              this.reconnectAttempts,
-            delay,
-          },
-          "WhatsApp connection closed; reconnecting",
-        );
-
-        this.reconnectTimer =
-          setTimeout(() => {
-            void this.connect().catch(
-              (error: unknown) => {
-                logger.error(
-                  {
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : String(error),
-                  },
-                  "WhatsApp reconnect failed",
-                );
-              },
-            );
-          }, delay);
-      },
-    );
+        void this.connect();
+      }, delay);
   }
 
   async stop(): Promise<void> {
     this.stopping = true;
 
     this.status = "stopped";
+
     this.qrCodeDataUrl = undefined;
 
     if (this.reconnectTimer) {
       clearTimeout(
         this.reconnectTimer,
       );
+
+      this.reconnectTimer =
+        undefined;
     }
 
-    this.reconnectTimer = undefined;
+    try {
+      this.socket?.end(undefined);
+    } catch (error) {
+      logger.warn(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
+        },
+        "Error while closing WhatsApp socket",
+      );
+    }
 
-    this.socket?.end(undefined);
     this.socket = undefined;
 
     logger.info(
